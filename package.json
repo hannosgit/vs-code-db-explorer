@@ -1,0 +1,117 @@
+{
+  "name": "db-explorer",
+  "displayName": "Postgres Explorer",
+  "description": "VS Code extension for PostgreSQL browsing, queries, and data editing.",
+  "version": "0.0.1",
+  "publisher": "local",
+  "engines": {
+    "vscode": "^1.85.0"
+  },
+  "categories": [
+    "Databases"
+  ],
+  "activationEvents": [
+    "onCommand:postgres.connect",
+    "onCommand:postgres.disconnect",
+    "onCommand:postgres.refreshSchema",
+    "onCommand:postgres.runQuery",
+    "onCommand:postgres.openTable",
+    "onCommand:postgres.exportResults",
+    "onView:postgresConnections",
+    "onView:postgresSchema"
+  ],
+  "main": "./dist/extension.js",
+  "contributes": {
+    "commands": [
+      {
+        "command": "postgres.connect",
+        "title": "Postgres: Connect"
+      },
+      {
+        "command": "postgres.disconnect",
+        "title": "Postgres: Disconnect"
+      },
+      {
+        "command": "postgres.refreshSchema",
+        "title": "Postgres: Refresh Schema"
+      },
+      {
+        "command": "postgres.runQuery",
+        "title": "Postgres: Run Query"
+      },
+      {
+        "command": "postgres.openTable",
+        "title": "Postgres: Open Table"
+      },
+      {
+        "command": "postgres.exportResults",
+        "title": "Postgres: Export Results"
+      }
+    ],
+    "views": {
+      "explorer": [
+        {
+          "id": "postgresConnections",
+          "name": "Postgres Connections"
+        },
+        {
+          "id": "postgresSchema",
+          "name": "Postgres Schema"
+        }
+      ]
+    },
+    "configuration": {
+      "title": "Postgres Explorer",
+      "properties": {
+        "postgresExplorer.profiles": {
+          "type": "array",
+          "default": [],
+          "description": "Saved PostgreSQL connection profiles.",
+          "items": {
+            "type": "object",
+            "required": ["id", "label", "host", "port", "database", "user"],
+            "properties": {
+              "id": {
+                "type": "string",
+                "description": "Unique profile id."
+              },
+              "label": {
+                "type": "string",
+                "description": "Display name for the profile."
+              },
+              "host": {
+                "type": "string",
+                "description": "Host name or IP."
+              },
+              "port": {
+                "type": "number",
+                "description": "Port number."
+              },
+              "database": {
+                "type": "string",
+                "description": "Database name."
+              },
+              "user": {
+                "type": "string",
+                "description": "Database user."
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "scripts": {
+    "compile": "tsc -p .",
+    "watch": "tsc -watch -p .",
+    "package": "vsce package"
+  },
+  "devDependencies": {
+    "@types/node": "^20.11.30",
+    "@types/vscode": "^1.85.0",
+    "typescript": "^5.4.2"
+  },
+  "dependencies": {
+    "pg": "^8.11.5"
+  }
+}
