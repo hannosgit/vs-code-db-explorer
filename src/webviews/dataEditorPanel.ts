@@ -34,21 +34,35 @@ export class DataEditorPanel {
   private saveHandler?: SaveHandler;
   private refreshHandler?: RefreshHandler;
 
-  static createOrShow(extensionUri: vscode.Uri): DataEditorPanel {
+  static createOrShow(
+    extensionUri: vscode.Uri,
+    viewColumn?: vscode.ViewColumn
+  ): DataEditorPanel {
     if (DataEditorPanel.currentPanel) {
-      DataEditorPanel.currentPanel.panel.reveal(vscode.ViewColumn.Beside);
+      DataEditorPanel.currentPanel.panel.reveal();
       return DataEditorPanel.currentPanel;
     }
 
+    const column = viewColumn ?? vscode.ViewColumn.Beside;
     const panel = vscode.window.createWebviewPanel(
       "postgresDataEditor",
       "Postgres Data Editor",
-      vscode.ViewColumn.Beside,
+      column,
       { enableScripts: true }
     );
 
     DataEditorPanel.currentPanel = new DataEditorPanel(panel, extensionUri);
     return DataEditorPanel.currentPanel;
+  }
+
+  static getViewColumn(): vscode.ViewColumn | undefined {
+    return DataEditorPanel.currentPanel?.panel.viewColumn;
+  }
+
+  static disposeCurrentPanel(): void {
+    const panel = DataEditorPanel.currentPanel?.panel;
+    DataEditorPanel.currentPanel = undefined;
+    panel?.dispose();
   }
 
   private constructor(
@@ -57,7 +71,9 @@ export class DataEditorPanel {
   ) {
     void this.extensionUri;
     this.panel.onDidDispose(() => {
-      DataEditorPanel.currentPanel = undefined;
+      if (DataEditorPanel.currentPanel === this) {
+        DataEditorPanel.currentPanel = undefined;
+      }
     });
 
     this.panel.webview.onDidReceiveMessage((message) => {

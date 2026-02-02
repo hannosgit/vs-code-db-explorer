@@ -5,6 +5,7 @@ import { runCancelableQuery } from "./query/queryRunner";
 import { getSqlToRun } from "./query/sqlText";
 import { ConnectionsTreeDataProvider } from "./views/connectionsTree";
 import { SchemaTreeDataProvider } from "./views/schemaTree";
+import { DataEditorPanel } from "./webviews/dataEditorPanel";
 import { ResultsPanel } from "./webviews/resultsPanel";
 import { showNotImplemented } from "./utils/notifications";
 
@@ -107,7 +108,9 @@ export function activate(context: vscode.ExtensionContext): void {
         return;
       }
 
-      const panel = ResultsPanel.createOrShow(context.extensionUri);
+      const viewColumn = DataEditorPanel.getViewColumn();
+      DataEditorPanel.disposeCurrentPanel();
+      const panel = ResultsPanel.createOrShow(context.extensionUri, viewColumn);
       panel.showLoading(sql);
       panel.setCancelHandler(undefined);
 

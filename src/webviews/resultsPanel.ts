@@ -5,21 +5,35 @@ export class ResultsPanel {
   private static currentPanel: ResultsPanel | undefined;
   private cancelHandler?: () => Promise<boolean>;
 
-  static createOrShow(extensionUri: vscode.Uri): ResultsPanel {
+  static createOrShow(
+    extensionUri: vscode.Uri,
+    viewColumn?: vscode.ViewColumn
+  ): ResultsPanel {
     if (ResultsPanel.currentPanel) {
-      ResultsPanel.currentPanel.panel.reveal(vscode.ViewColumn.Beside);
+      ResultsPanel.currentPanel.panel.reveal();
       return ResultsPanel.currentPanel;
     }
 
+    const column = viewColumn ?? vscode.ViewColumn.Beside;
     const panel = vscode.window.createWebviewPanel(
       "postgresResults",
       "Postgres Results",
-      vscode.ViewColumn.Beside,
+      column,
       { enableScripts: true }
     );
 
     ResultsPanel.currentPanel = new ResultsPanel(panel, extensionUri);
     return ResultsPanel.currentPanel;
+  }
+
+  static getViewColumn(): vscode.ViewColumn | undefined {
+    return ResultsPanel.currentPanel?.panel.viewColumn;
+  }
+
+  static disposeCurrentPanel(): void {
+    const panel = ResultsPanel.currentPanel?.panel;
+    ResultsPanel.currentPanel = undefined;
+    panel?.dispose();
   }
 
   private constructor(
@@ -28,7 +42,9 @@ export class ResultsPanel {
   ) {
     void this.extensionUri;
     this.panel.onDidDispose(() => {
-      ResultsPanel.currentPanel = undefined;
+      if (ResultsPanel.currentPanel === this) {
+        ResultsPanel.currentPanel = undefined;
+      }
     });
 
     this.panel.webview.onDidReceiveMessage((message) => {

@@ -6,6 +6,7 @@ import {
   DataEditorState,
   EditorRow
 } from "../webviews/dataEditorPanel";
+import { ResultsPanel } from "../webviews/resultsPanel";
 
 const DEFAULT_ROW_LIMIT = 200;
 
@@ -36,7 +37,9 @@ export class OpenTableService {
     }
 
     this.activeTable = table;
-    const panel = DataEditorPanel.createOrShow(this.extensionUri);
+    const viewColumn = ResultsPanel.getViewColumn();
+    ResultsPanel.disposeCurrentPanel();
+    const panel = DataEditorPanel.createOrShow(this.extensionUri, viewColumn);
     this.panel = panel;
     panel.setSaveHandler((changes) => this.saveChanges(changes));
     panel.setRefreshHandler(() => this.reload());
