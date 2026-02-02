@@ -56,6 +56,13 @@
           "when": "resourceExtname == .sql",
           "group": "navigation@10"
         }
+      ],
+      "view/item/context": [
+        {
+          "command": "postgres.openTable",
+          "when": "view == postgresSchema && viewItem == postgresTable",
+          "group": "navigation@10"
+        }
       ]
     },
     "views": {
