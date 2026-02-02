@@ -55,6 +55,11 @@ export class ConnectionManager {
     return config.get<ConnectionProfile[]>("profiles", []);
   }
 
+  async clearStoredPassword(profileId: string): Promise<void> {
+    const passwordKey = `${ConnectionManager.passwordKeyPrefix}${profileId}`;
+    await this.secrets.delete(passwordKey);
+  }
+
   async connect(profileId: string): Promise<void> {
     const profile = this.listProfiles().find((item) => item.id === profileId);
     if (!profile) {

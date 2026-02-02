@@ -17,6 +17,7 @@
     "onCommand:postgres.runQuery",
     "onCommand:postgres.openTable",
     "onCommand:postgres.exportResults",
+    "onCommand:postgres.clearPassword",
     "onView:postgresConnections",
     "onView:postgresSchema"
   ],
@@ -46,8 +47,28 @@
       {
         "command": "postgres.exportResults",
         "title": "Postgres: Export Results"
+      },
+      {
+        "command": "postgres.clearPassword",
+        "title": "Postgres: Clear Stored Password"
       }
     ],
+    "menus": {
+      "editor/context": [
+        {
+          "command": "postgres.runQuery",
+          "when": "resourceLangId == sql",
+          "group": "navigation@10"
+        }
+      ],
+      "explorer/context": [
+        {
+          "command": "postgres.runQuery",
+          "when": "resourceExtname == .sql",
+          "group": "navigation@10"
+        }
+      ]
+    },
     "views": {
       "explorer": [
         {

@@ -74,8 +74,17 @@ export function activate(context: vscode.ExtensionContext): void {
     vscode.commands.registerCommand("postgres.refreshSchema", () => {
       schemaProvider.refresh();
     }),
-    vscode.commands.registerCommand("postgres.runQuery", async () => {
-      const editor = vscode.window.activeTextEditor;
+    vscode.commands.registerCommand("postgres.runQuery", async (resource?: vscode.Uri) => {
+      let editor = vscode.window.activeTextEditor;
+
+      if (resource) {
+        const activeUri = editor?.document.uri.toString();
+        if (!activeUri || activeUri !== resource.toString()) {
+          const document = await vscode.workspace.openTextDocument(resource);
+          editor = await vscode.window.showTextDocument(document, { preview: false });
+        }
+      }
+
       if (!editor) {
         void vscode.window.showWarningMessage("Open a SQL file to run a query.");
         return;
@@ -113,6 +122,33 @@ export function activate(context: vscode.ExtensionContext): void {
     }),
     vscode.commands.registerCommand("postgres.exportResults", () => {
       showNotImplemented("Export Results");
+    }),
+    vscode.commands.registerCommand("postgres.clearPassword", async () => {
+      const profiles = connectionManager.listProfiles();
+      if (profiles.length === 0) {
+        void vscode.window.showWarningMessage(
+          "No profiles configured. Add profiles in settings.json."
+        );
+        return;
+      }
+
+      const picked = await vscode.window.showQuickPick(
+        profiles.map((profile) => ({
+          label: profile.label,
+          description: `${profile.user}@${profile.host}:${profile.port}/${profile.database}`,
+          profile
+        })),
+        { placeHolder: "Select a profile to clear stored password" }
+      );
+
+      if (!picked) {
+        return;
+      }
+
+      await connectionManager.clearStoredPassword(picked.profile.id);
+      void vscode.window.showInformationMessage(
+        `Cleared stored password for ${picked.profile.label}.`
+      );
     })
   );
 }
