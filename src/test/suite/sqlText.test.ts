@@ -40,6 +40,18 @@ describe("getSqlToRun", () => {
     assert.strictEqual(sql, "SELECT 1");
   });
 
+  it("returns null for whitespace-only selections", async () => {
+    const content = "   ";
+    const textEditor = await openEditor(content);
+
+    const start = new vscode.Position(0, 0);
+    const end = new vscode.Position(0, content.length);
+
+    textEditor.selection = new vscode.Selection(start, end);
+    const sql = getSqlToRun(textEditor);
+    assert.strictEqual(sql, null);
+  });
+
   it("returns the statement around the cursor", async () => {
     const content = "SELECT 1;\nSELECT 2;\nSELECT 3;";
     const textEditor = await openEditor(content);
@@ -58,5 +70,27 @@ describe("getSqlToRun", () => {
 
     const sql = getSqlToRun(textEditor);
     assert.strictEqual(sql, null);
+  });
+
+  it("returns previous statement when cursor is on semicolon", async () => {
+    const content = "SELECT 1;SELECT 2;";
+    const textEditor = await openEditor(content);
+
+    const cursor = new vscode.Position(0, 8);
+    textEditor.selection = new vscode.Selection(cursor, cursor);
+
+    const sql = getSqlToRun(textEditor);
+    assert.strictEqual(sql, "SELECT 1");
+  });
+
+  it("returns statement after the previous semicolon", async () => {
+    const content = "SELECT 1;SELECT 2";
+    const textEditor = await openEditor(content);
+
+    const cursor = new vscode.Position(0, 9);
+    textEditor.selection = new vscode.Selection(cursor, cursor);
+
+    const sql = getSqlToRun(textEditor);
+    assert.strictEqual(sql, "SELECT 2");
   });
 });

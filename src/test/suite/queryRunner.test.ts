@@ -1,6 +1,6 @@
 import * as assert from "assert";
 import { describe, it } from "mocha";
-import { runCancelableQuery } from "../../query/queryRunner";
+import { runCancelableQuery, runQuery } from "../../query/queryRunner";
 
 type FakeQueryResult = {
   fields: { name: string }[];
@@ -72,6 +72,23 @@ describe("runCancelableQuery", () => {
     assert.strictEqual(result.error, undefined);
   });
 
+  it("runQuery resolves with query results", async () => {
+    const pool = createPool({
+      result: {
+        fields: [{ name: "value" }],
+        rows: [{ value: "ok" }],
+        rowCount: 1
+      }
+    });
+
+    const result = await runQuery(pool as unknown as import("pg").Pool, "SELECT 1");
+
+    assert.deepStrictEqual(result.columns, ["value"]);
+    assert.deepStrictEqual(result.rows, [{ value: "ok" }]);
+    assert.strictEqual(result.truncated, false);
+    assert.strictEqual(result.cancelled, false);
+  });
+
   it("normalizes errors without cancelling", async () => {
     const pool = createPool({
       error: {
@@ -138,5 +155,65 @@ describe("runCancelableQuery", () => {
     assert.strictEqual(cancelled, true);
     assert.strictEqual(cancelSql, "SELECT pg_cancel_backend($1)");
     assert.deepStrictEqual(cancelParams, [123]);
+  });
+
+  it("returns false when cancellation pid is unavailable", async () => {
+    let resolveQuery: (value: FakeQueryResult) => void;
+    const queryPromise = new Promise<FakeQueryResult>((resolve) => {
+      resolveQuery = resolve;
+    });
+
+    const pool: FakePool = {
+      connect: async () => ({
+        query: async () => queryPromise,
+        release: () => {}
+      }),
+      query: async () => ({})
+    };
+
+    const { promise, cancel } = runCancelableQuery(pool as unknown as import("pg").Pool, "SELECT *");
+    const cancelled = await cancel();
+    resolveQuery!({ fields: [], rows: [], rowCount: 0 });
+    await promise;
+
+    assert.strictEqual(cancelled, false);
+  });
+
+  it("returns false when cancellation query fails", async () => {
+    let resolveQuery: (value: FakeQueryResult) => void;
+    const queryPromise = new Promise<FakeQueryResult>((resolve) => {
+      resolveQuery = resolve;
+    });
+
+    const pool: FakePool = {
+      connect: async () => ({
+        processID: 456,
+        query: async () => queryPromise,
+        release: () => {}
+      }),
+      query: async () => {
+        throw new Error("cancel failed");
+      }
+    };
+
+    const { promise, cancel } = runCancelableQuery(pool as unknown as import("pg").Pool, "SELECT *");
+    const cancelled = await cancel();
+    resolveQuery!({ fields: [], rows: [], rowCount: 0 });
+    await promise;
+
+    assert.strictEqual(cancelled, false);
+  });
+
+  it("normalizes unknown thrown values", async () => {
+    const pool = createPool({
+      error: "boom"
+    });
+
+    const { promise } = runCancelableQuery(pool as unknown as import("pg").Pool, "SELECT *");
+    const result = await promise;
+
+    assert.strictEqual(result.cancelled, false);
+    assert.strictEqual(result.error?.message, "Unknown error");
+    assert.strictEqual(result.error?.code, undefined);
   });
 });
