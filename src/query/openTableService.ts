@@ -9,6 +9,7 @@ import {
 import { ResultsPanel } from "../webviews/resultsPanel";
 
 const DEFAULT_ROW_LIMIT = 200;
+const ROW_TOKEN_ALIAS = "__postgres_explorer_row_token__";
 
 type TableContext = { schemaName: string; tableName: string };
 
@@ -16,6 +17,7 @@ export class OpenTableService {
   private panel?: DataEditorPanel;
   private activeTable?: TableContext;
   private activeState?: DataEditorState;
+  private activeRowTokens: string[] = [];
 
   constructor(
     private readonly connectionManager: ConnectionManager,
@@ -72,7 +74,8 @@ export class OpenTableService {
 
   private buildOpenTableSql(schemaName: string, tableName: string, limit: number): string {
     const qualified = `${this.quoteIdentifier(schemaName)}.${this.quoteIdentifier(tableName)}`;
-    return `SELECT * FROM ${qualified} LIMIT ${limit};`;
+    const rowToken = this.quoteIdentifier(ROW_TOKEN_ALIAS);
+    return `SELECT ctid::text AS ${rowToken}, * FROM ${qualified} ORDER BY ctid LIMIT ${limit};`;
   }
 
   private async reload(): Promise<void> {
@@ -91,8 +94,15 @@ export class OpenTableService {
 
     try {
       const result = await pool.query(sql);
-      const columns = result.fields.map((field) => field.name);
+      const columns = result.fields
+        .map((field) => field.name)
+        .filter((fieldName) => fieldName !== ROW_TOKEN_ALIAS);
+      const rowTokens: string[] = [];
       const rows = result.rows.map((row) => this.toEditorRow(row, columns));
+      result.rows.forEach((row) => {
+        const rowToken = row[ROW_TOKEN_ALIAS];
+        rowTokens.push(typeof rowToken === "string" ? rowToken : "");
+      });
       const state: DataEditorState = {
         schemaName: this.activeTable.schemaName,
         tableName: this.activeTable.tableName,
@@ -101,6 +111,7 @@ export class OpenTableService {
         rowLimit: limit
       };
       this.activeState = state;
+      this.activeRowTokens = rowTokens;
       this.panel?.showState(state);
     } catch (error) {
       const message = error instanceof Error ? error.message : "Failed to load table data.";
@@ -113,6 +124,7 @@ export class OpenTableService {
         error: message
       };
       this.activeState = state;
+      this.activeRowTokens = [];
       this.panel?.showState(state);
     }
   }
@@ -153,11 +165,11 @@ export class OpenTableService {
       try {
         await client.query("BEGIN");
         for (const change of changes) {
-          const original = state.rows[change.rowIndex];
-          if (!original) {
+          const rowToken = this.activeRowTokens[change.rowIndex];
+          if (!rowToken) {
             continue;
           }
-          const statement = this.buildUpdateStatement(table, state.columns, original, change);
+          const statement = this.buildUpdateStatement(table, state.columns, change, rowToken);
           if (!statement) {
             continue;
           }
@@ -186,8 +198,8 @@ export class OpenTableService {
   private buildUpdateStatement(
     table: TableContext,
     columns: string[],
-    original: EditorRow,
-    change: DataEditorChange
+    change: DataEditorChange,
+    rowToken: string
   ): { sql: string; values: unknown[] } | undefined {
     if (!change.updates.length) {
       return undefined;
@@ -208,22 +220,13 @@ export class OpenTableService {
       return undefined;
     }
 
-    const whereClauses: string[] = [];
-    columns.forEach((columnName, index) => {
-      if (original.nulls[index]) {
-        whereClauses.push(`${this.quoteIdentifier(columnName)} IS NULL`);
-        return;
-      }
-      whereClauses.push(`${this.quoteIdentifier(columnName)} = $${values.length + 1}`);
-      values.push(original.values[index]);
-    });
-
     const qualified = `${this.quoteIdentifier(table.schemaName)}.${this.quoteIdentifier(
       table.tableName
     )}`;
-    const sql = `UPDATE ${qualified} SET ${setClauses.join(", ")} WHERE ${whereClauses.join(
-      " AND "
-    )};`;
+    values.push(rowToken);
+    const sql = `UPDATE ${qualified} SET ${setClauses.join(", ")} WHERE ctid = $${
+      values.length
+    }::tid;`;
 
     return { sql, values };
   }
