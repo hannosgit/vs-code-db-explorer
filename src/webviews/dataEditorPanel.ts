@@ -9,6 +9,7 @@ export interface DataEditorState {
   schemaName: string;
   tableName: string;
   columns: string[];
+  columnTypes?: string[];
   rows: EditorRow[];
   rowLimit: number;
   loading?: boolean;
@@ -126,7 +127,7 @@ function buildHtml(state: DataEditorState): string {
     ? `<div class="empty">Loading table data...</div>`
     : state.error
       ? `<div class="error">${escapeHtml(state.error)}</div>`
-      : renderTableShell(state.columns);
+      : renderTableShell(state.columns, state.columnTypes ?? []);
 
   return `<!DOCTYPE html>
 <html lang="en">
@@ -212,6 +213,17 @@ function buildHtml(state: DataEditorState): string {
       z-index: 1;
       padding: 6px 8px;
       font-weight: 600;
+    }
+    th .column-header {
+      display: inline-flex;
+      align-items: baseline;
+      gap: 6px;
+      flex-wrap: wrap;
+    }
+    th .column-type {
+      font-size: 11px;
+      font-weight: 400;
+      color: var(--vscode-descriptionForeground);
     }
     td input {
       width: 100%;
@@ -483,8 +495,14 @@ function buildHtml(state: DataEditorState): string {
 </html>`;
 }
 
-function renderTableShell(columns: string[]): string {
-  const headers = columns.map((column) => `<th>${escapeHtml(column)}</th>`).join("");
+function renderTableShell(columns: string[], columnTypes: string[]): string {
+  const headers = columns
+    .map((column, columnIndex) => {
+      const columnType = columnTypes[columnIndex] ?? "";
+      const typeLabel = columnType ? ` <span class="column-type">(${escapeHtml(columnType)})</span>` : "";
+      return `<th><span class="column-header">${escapeHtml(column)}${typeLabel}</span></th>`;
+    })
+    .join("");
   return `
     <div class="table-wrap">
       <table id="data-table">

@@ -80,6 +80,45 @@ export class OpenTableService {
     return `SELECT ctid::text AS ${rowToken}, * FROM ${qualified} ORDER BY ctid LIMIT ${limit};`;
   }
 
+  private buildColumnTypesSql(): string {
+    return `
+      SELECT a.attname AS column_name, pg_catalog.format_type(a.atttypid, a.atttypmod) AS column_type
+      FROM pg_catalog.pg_attribute a
+      JOIN pg_catalog.pg_class c ON c.oid = a.attrelid
+      JOIN pg_catalog.pg_namespace n ON n.oid = c.relnamespace
+      WHERE n.nspname = $1
+        AND c.relname = $2
+        AND a.attnum > 0
+        AND NOT a.attisdropped
+      ORDER BY a.attnum;
+    `;
+  }
+
+  private async loadColumnTypes(
+    table: TableContext,
+    columns: string[]
+  ): Promise<string[]> {
+    const pool = this.connectionManager.getPool();
+    if (!pool || columns.length === 0) {
+      return [];
+    }
+
+    try {
+      const result = await pool.query(this.buildColumnTypesSql(), [table.schemaName, table.tableName]);
+      const typeByColumn = new Map<string, string>();
+      for (const row of result.rows as Record<string, unknown>[]) {
+        const columnName = row.column_name;
+        const columnType = row.column_type;
+        if (typeof columnName === "string" && typeof columnType === "string") {
+          typeByColumn.set(columnName, columnType);
+        }
+      }
+      return columns.map((columnName) => typeByColumn.get(columnName) ?? "");
+    } catch {
+      return columns.map(() => "");
+    }
+  }
+
   private async reload(): Promise<void> {
     if (!this.activeTable) {
       return;
@@ -99,6 +138,7 @@ export class OpenTableService {
       const columns = result.fields
         .map((field) => field.name)
         .filter((fieldName) => fieldName !== ROW_TOKEN_ALIAS);
+      const columnTypes = await this.loadColumnTypes(this.activeTable, columns);
       const rowTokens: string[] = [];
       const rows = result.rows.map((row) => this.toEditorRow(row, columns));
       result.rows.forEach((row) => {
@@ -109,6 +149,7 @@ export class OpenTableService {
         schemaName: this.activeTable.schemaName,
         tableName: this.activeTable.tableName,
         columns,
+        columnTypes,
         rows,
         rowLimit: limit
       };
