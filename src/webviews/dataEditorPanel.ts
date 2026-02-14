@@ -11,7 +11,9 @@ export interface DataEditorState {
   columns: string[];
   columnTypes?: string[];
   rows: EditorRow[];
-  rowLimit: number;
+  pageSize: number;
+  pageNumber: number;
+  hasNextPage: boolean;
   loading?: boolean;
   error?: string;
 }
@@ -37,11 +39,14 @@ export type DataEditorChange = DataEditorUpdateChange | DataEditorInsertChange;
 
 type SaveHandler = (changes: DataEditorChange[]) => void | Promise<void>;
 type RefreshHandler = () => void | Promise<void>;
+type PageDirection = "previous" | "next";
+type PageHandler = (direction: PageDirection) => void | Promise<void>;
 
 export class DataEditorPanel {
   private static currentPanel: DataEditorPanel | undefined;
   private saveHandler?: SaveHandler;
   private refreshHandler?: RefreshHandler;
+  private pageHandler?: PageHandler;
 
   static createOrShow(
     extensionUri: vscode.Uri,
@@ -97,6 +102,14 @@ export class DataEditorPanel {
       if (message.command === "refresh" && this.refreshHandler) {
         void this.refreshHandler();
       }
+
+      if (
+        message.command === "page" &&
+        this.pageHandler &&
+        (message.direction === "previous" || message.direction === "next")
+      ) {
+        void this.pageHandler(message.direction);
+      }
     });
   }
 
@@ -106,6 +119,10 @@ export class DataEditorPanel {
 
   setRefreshHandler(handler?: RefreshHandler): void {
     this.refreshHandler = handler;
+  }
+
+  setPageHandler(handler?: PageHandler): void {
+    this.pageHandler = handler;
   }
 
   showState(state: DataEditorState): void {
@@ -118,11 +135,10 @@ function buildHtml(state: DataEditorState): string {
   const safeState = JSON.stringify(state).replace(/</g, "\\u003c");
   const headerTitle = `${escapeHtml(state.schemaName)}.${escapeHtml(state.tableName)}`;
   const rowCount = state.rows.length;
-  const rowSummary =
-    rowCount >= state.rowLimit
-      ? `Showing first ${rowCount} rows (limit ${state.rowLimit}).`
-      : `${rowCount} rows loaded.`;
+  const rowSummary = `Page ${state.pageNumber} • ${rowCount} rows loaded (page size ${state.pageSize}).`;
   const addRowDisabled = state.loading || !!state.error || state.columns.length === 0;
+  const prevPageDisabled = state.loading || state.pageNumber <= 1;
+  const nextPageDisabled = state.loading || !!state.error || !state.hasNextPage;
   const body = state.loading
     ? `<div class="empty">Loading table data...</div>`
     : state.error
@@ -167,6 +183,15 @@ function buildHtml(state: DataEditorState): string {
       display: flex;
       gap: 8px;
       align-items: center;
+    }
+    .pager {
+      display: flex;
+      gap: 8px;
+      align-items: center;
+    }
+    .pager-status {
+      color: var(--vscode-descriptionForeground);
+      font-size: 11px;
     }
     button {
       font: inherit;
@@ -268,6 +293,11 @@ function buildHtml(state: DataEditorState): string {
       <button id="save" disabled>Save</button>
       <button id="revert" class="secondary" disabled>Revert</button>
       <button id="refresh" class="secondary">Refresh</button>
+      <div class="pager">
+        <button id="page-prev" class="secondary"${prevPageDisabled ? " disabled" : ""}>Previous</button>
+        <span class="pager-status">Page ${state.pageNumber}</span>
+        <button id="page-next" class="secondary"${nextPageDisabled ? " disabled" : ""}>Next</button>
+      </div>
     </div>
   </header>
   <div class="note">Tip: use <strong>Add row</strong> to insert and type <strong>NULL</strong> to set a value to NULL.</div>
@@ -279,6 +309,8 @@ function buildHtml(state: DataEditorState): string {
     const saveButton = document.getElementById("save");
     const revertButton = document.getElementById("revert");
     const refreshButton = document.getElementById("refresh");
+    const prevPageButton = document.getElementById("page-prev");
+    const nextPageButton = document.getElementById("page-next");
     const inputs = [];
     const originalRows = state.rows.map((row) => ({
       values: [...row.values],
@@ -293,6 +325,31 @@ function buildHtml(state: DataEditorState): string {
     if (refreshButton) {
       refreshButton.addEventListener("click", () => {
         vscode.postMessage({ command: "refresh" });
+      });
+    }
+
+    function canNavigatePage() {
+      if (!saveButton || saveButton.disabled) {
+        return true;
+      }
+      return window.confirm("You have unsaved changes on this page. Continue and discard them?");
+    }
+
+    if (prevPageButton) {
+      prevPageButton.addEventListener("click", () => {
+        if (!canNavigatePage()) {
+          return;
+        }
+        vscode.postMessage({ command: "page", direction: "previous" });
+      });
+    }
+
+    if (nextPageButton) {
+      nextPageButton.addEventListener("click", () => {
+        if (!canNavigatePage()) {
+          return;
+        }
+        vscode.postMessage({ command: "page", direction: "next" });
       });
     }
 

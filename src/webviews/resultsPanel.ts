@@ -1,6 +1,8 @@
 import * as vscode from "vscode";
 import { QueryExecutionResult } from "../query/queryRunner";
 
+const RESULTS_PAGE_SIZE = 100;
+
 export class ResultsPanel {
   private static currentPanel: ResultsPanel | undefined;
   private cancelHandler?: () => Promise<boolean>;
@@ -159,6 +161,26 @@ function buildHtml(
       padding: 12px 16px 24px;
       overflow: auto;
     }
+    .table-toolbar {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      margin-bottom: 8px;
+      color: var(--muted);
+      font-size: 12px;
+    }
+    .table-toolbar button {
+      padding: 4px 10px;
+      border-radius: 4px;
+      border: 1px solid var(--border);
+      background: transparent;
+      color: var(--text);
+      cursor: pointer;
+    }
+    .table-toolbar button[disabled] {
+      opacity: 0.6;
+      cursor: default;
+    }
     table {
       border-collapse: collapse;
       width: 100%;
@@ -265,26 +287,78 @@ function renderTable(result: QueryExecutionResult): string {
   }
 
   const headerRow = result.columns.map((col) => `<th>${escapeHtml(col)}</th>`).join("");
-  const bodyRows = result.rows
+  const allRows = result.rows
     .map((row) => {
       const cells = result.columns
         .map((col) => formatCell(row[col]))
         .join("");
       return `<tr>${cells}</tr>`;
-    })
-    .join("");
+    });
+  const safeRows = JSON.stringify(allRows).replace(/</g, "\\u003c");
 
   return `
     <div class="table-wrap">
+      <div class="table-toolbar">
+        <button id="results-prev" disabled>Previous</button>
+        <span id="results-page-info"></span>
+        <button id="results-next"${allRows.length > RESULTS_PAGE_SIZE ? "" : " disabled"}>Next</button>
+      </div>
       <table>
         <thead>
           <tr>${headerRow}</tr>
         </thead>
-        <tbody>
-          ${bodyRows}
-        </tbody>
+        <tbody id="results-body"></tbody>
       </table>
     </div>
+    <script>
+      (() => {
+        const rows = ${safeRows};
+        const pageSize = ${RESULTS_PAGE_SIZE};
+        const totalRows = rows.length;
+        const totalPages = Math.max(1, Math.ceil(totalRows / pageSize));
+        let pageIndex = 0;
+
+        const prevButton = document.getElementById("results-prev");
+        const nextButton = document.getElementById("results-next");
+        const pageInfo = document.getElementById("results-page-info");
+        const tbody = document.getElementById("results-body");
+
+        if (!prevButton || !nextButton || !pageInfo || !tbody) {
+          return;
+        }
+
+        function renderPage() {
+          const start = pageIndex * pageSize;
+          const end = Math.min(start + pageSize, totalRows);
+          tbody.innerHTML = rows.slice(start, end).join("");
+          prevButton.disabled = pageIndex === 0;
+          nextButton.disabled = pageIndex >= totalPages - 1;
+          if (totalRows === 0) {
+            pageInfo.textContent = "No rows";
+            return;
+          }
+          pageInfo.textContent = "Rows " + (start + 1) + "-" + end + " of " + totalRows + " (Page " + (pageIndex + 1) + " of " + totalPages + ")";
+        }
+
+        prevButton.addEventListener("click", () => {
+          if (pageIndex === 0) {
+            return;
+          }
+          pageIndex -= 1;
+          renderPage();
+        });
+
+        nextButton.addEventListener("click", () => {
+          if (pageIndex >= totalPages - 1) {
+            return;
+          }
+          pageIndex += 1;
+          renderPage();
+        });
+
+        renderPage();
+      })();
+    </script>
   `;
 }
 

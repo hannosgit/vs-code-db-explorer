@@ -10,7 +10,7 @@ import {
 } from "../webviews/dataEditorPanel";
 import { ResultsPanel } from "../webviews/resultsPanel";
 
-const DEFAULT_ROW_LIMIT = 200;
+const DATA_EDITOR_PAGE_SIZE = 100;
 const ROW_TOKEN_ALIAS = "__postgres_explorer_row_token__";
 
 type TableContext = { schemaName: string; tableName: string };
@@ -20,11 +20,11 @@ export class OpenTableService {
   private activeTable?: TableContext;
   private activeState?: DataEditorState;
   private activeRowTokens: string[] = [];
+  private currentPage = 0;
 
   constructor(
     private readonly connectionManager: ConnectionManager,
-    private readonly extensionUri: vscode.Uri,
-    private readonly rowLimit = DEFAULT_ROW_LIMIT
+    private readonly extensionUri: vscode.Uri
   ) {}
 
   async open(item?: unknown): Promise<void> {
@@ -41,19 +41,25 @@ export class OpenTableService {
     }
 
     this.activeTable = table;
+    this.currentPage = 0;
     const viewColumn = ResultsPanel.getViewColumn();
     ResultsPanel.disposeCurrentPanel();
     const panel = DataEditorPanel.createOrShow(this.extensionUri, viewColumn);
     this.panel = panel;
     panel.setSaveHandler((changes) => this.saveChanges(changes));
     panel.setRefreshHandler(() => this.reload());
+    panel.setPageHandler((direction) => this.changePage(direction));
+
+    const pageSize = this.normalizePageSize(DATA_EDITOR_PAGE_SIZE);
 
     const loadingState: DataEditorState = {
       schemaName: table.schemaName,
       tableName: table.tableName,
       columns: [],
       rows: [],
-      rowLimit: this.normalizeLimit(this.rowLimit),
+      pageSize,
+      pageNumber: this.currentPage + 1,
+      hasNextPage: false,
       loading: true
     };
     panel.showState(loadingState);
@@ -74,10 +80,15 @@ export class OpenTableService {
     return { schemaName: maybe.schemaName, tableName: maybe.tableName };
   }
 
-  private buildOpenTableSql(schemaName: string, tableName: string, limit: number): string {
+  private buildOpenTableSql(
+    schemaName: string,
+    tableName: string,
+    limit: number,
+    offset: number
+  ): string {
     const qualified = `${this.quoteIdentifier(schemaName)}.${this.quoteIdentifier(tableName)}`;
     const rowToken = this.quoteIdentifier(ROW_TOKEN_ALIAS);
-    return `SELECT ctid::text AS ${rowToken}, * FROM ${qualified} ORDER BY ctid LIMIT ${limit};`;
+    return `SELECT ctid::text AS ${rowToken}, * FROM ${qualified} ORDER BY ctid LIMIT ${limit} OFFSET ${offset};`;
   }
 
   private buildColumnTypesSql(): string {
@@ -130,8 +141,15 @@ export class OpenTableService {
       return;
     }
 
-    const limit = this.normalizeLimit(this.rowLimit);
-    const sql = this.buildOpenTableSql(this.activeTable.schemaName, this.activeTable.tableName, limit);
+    const pageSize = this.normalizePageSize(DATA_EDITOR_PAGE_SIZE);
+    const offset = this.currentPage * pageSize;
+    const limit = pageSize + 1;
+    const sql = this.buildOpenTableSql(
+      this.activeTable.schemaName,
+      this.activeTable.tableName,
+      limit,
+      offset
+    );
 
     try {
       const result = await pool.query(sql);
@@ -139,9 +157,11 @@ export class OpenTableService {
         .map((field) => field.name)
         .filter((fieldName) => fieldName !== ROW_TOKEN_ALIAS);
       const columnTypes = await this.loadColumnTypes(this.activeTable, columns);
+      const hasNextPage = result.rows.length > pageSize;
+      const visibleRows = hasNextPage ? result.rows.slice(0, pageSize) : result.rows;
       const rowTokens: string[] = [];
-      const rows = result.rows.map((row) => this.toEditorRow(row, columns));
-      result.rows.forEach((row) => {
+      const rows = visibleRows.map((row) => this.toEditorRow(row, columns));
+      visibleRows.forEach((row) => {
         const rowToken = row[ROW_TOKEN_ALIAS];
         rowTokens.push(typeof rowToken === "string" ? rowToken : "");
       });
@@ -151,7 +171,9 @@ export class OpenTableService {
         columns,
         columnTypes,
         rows,
-        rowLimit: limit
+        pageSize,
+        pageNumber: this.currentPage + 1,
+        hasNextPage
       };
       this.activeState = state;
       this.activeRowTokens = rowTokens;
@@ -163,13 +185,33 @@ export class OpenTableService {
         tableName: this.activeTable.tableName,
         columns: [],
         rows: [],
-        rowLimit: limit,
+        pageSize,
+        pageNumber: this.currentPage + 1,
+        hasNextPage: false,
         error: message
       };
       this.activeState = state;
       this.activeRowTokens = [];
       this.panel?.showState(state);
     }
+  }
+
+  private async changePage(direction: "previous" | "next"): Promise<void> {
+    if (direction === "previous") {
+      if (this.currentPage === 0) {
+        return;
+      }
+      this.currentPage -= 1;
+      await this.reload();
+      return;
+    }
+
+    if (!this.activeState?.hasNextPage) {
+      return;
+    }
+
+    this.currentPage += 1;
+    await this.reload();
   }
 
   private async saveChanges(changes: DataEditorChange[]): Promise<void> {
@@ -356,9 +398,9 @@ export class OpenTableService {
     return String(value);
   }
 
-  private normalizeLimit(limit: number): number {
+  private normalizePageSize(limit: number): number {
     if (!Number.isFinite(limit) || limit <= 0) {
-      return DEFAULT_ROW_LIMIT;
+      return DATA_EDITOR_PAGE_SIZE;
     }
     return Math.floor(limit);
   }
