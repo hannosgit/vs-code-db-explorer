@@ -65,8 +65,17 @@
         }
       ]
     },
+    "viewsContainers": {
+      "activitybar": [
+        {
+          "id": "postgresExplorer",
+          "title": "Postgres",
+          "icon": "resources/postgres.svg"
+        }
+      ]
+    },
     "views": {
-      "explorer": [
+      "postgresExplorer": [
         {
           "id": "postgresConnections",
           "name": "Postgres Connections"
