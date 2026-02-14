@@ -21,10 +21,18 @@ export interface DataEditorCellUpdate {
   isNull: boolean;
 }
 
-export interface DataEditorChange {
+export interface DataEditorUpdateChange {
+  kind: "update";
   rowIndex: number;
   updates: DataEditorCellUpdate[];
 }
+
+export interface DataEditorInsertChange {
+  kind: "insert";
+  values: DataEditorCellUpdate[];
+}
+
+export type DataEditorChange = DataEditorUpdateChange | DataEditorInsertChange;
 
 type SaveHandler = (changes: DataEditorChange[]) => void | Promise<void>;
 type RefreshHandler = () => void | Promise<void>;
@@ -113,6 +121,7 @@ function buildHtml(state: DataEditorState): string {
     rowCount >= state.rowLimit
       ? `Showing first ${rowCount} rows (limit ${state.rowLimit}).`
       : `${rowCount} rows loaded.`;
+  const addRowDisabled = state.loading || !!state.error || state.columns.length === 0;
   const body = state.loading
     ? `<div class="empty">Loading table data...</div>`
     : state.error
@@ -224,6 +233,9 @@ function buildHtml(state: DataEditorState): string {
     td input.dirty {
       background: var(--vscode-editor-wordHighlightBackground);
     }
+    tr.new-row td {
+      background: var(--vscode-editor-inactiveSelectionBackground, rgba(127, 127, 127, 0.12));
+    }
     .empty, .error {
       padding: 16px;
       color: var(--vscode-descriptionForeground);
@@ -240,20 +252,31 @@ function buildHtml(state: DataEditorState): string {
       <div class="meta">${rowSummary}</div>
     </div>
     <div class="actions">
+      <button id="add-row" class="secondary"${addRowDisabled ? " disabled" : ""}>Add row</button>
       <button id="save" disabled>Save</button>
       <button id="revert" class="secondary" disabled>Revert</button>
       <button id="refresh" class="secondary">Refresh</button>
     </div>
   </header>
-  <div class="note">Tip: type <strong>NULL</strong> to set a value to NULL.</div>
+  <div class="note">Tip: use <strong>Add row</strong> to insert and type <strong>NULL</strong> to set a value to NULL.</div>
   ${body}
   <script>
     const state = ${safeState};
     const vscode = acquireVsCodeApi();
+    const addRowButton = document.getElementById("add-row");
     const saveButton = document.getElementById("save");
     const revertButton = document.getElementById("revert");
     const refreshButton = document.getElementById("refresh");
     const inputs = [];
+    const originalRows = state.rows.map((row) => ({
+      values: [...row.values],
+      nulls: [...row.nulls]
+    }));
+    let workingRows = originalRows.map((row) => ({
+      values: [...row.values],
+      nulls: [...row.nulls],
+      isNew: false
+    }));
 
     if (refreshButton) {
       refreshButton.addEventListener("click", () => {
@@ -261,13 +284,40 @@ function buildHtml(state: DataEditorState): string {
       });
     }
 
-    function computeCellUpdate(input, originalValue, originalNull) {
-      const raw = input.value;
+    function createEmptyRow() {
+      return {
+        values: state.columns.map(() => ""),
+        nulls: state.columns.map(() => false),
+        isNew: true
+      };
+    }
+
+    function computeCellValue(raw, baselineNull) {
       const trimmed = raw.trim();
-      const newNull = trimmed.toLowerCase() === "null" || (trimmed === "" && originalNull);
-      const changed =
-        newNull !== originalNull || (!newNull && raw !== originalValue);
-      return { changed, isNull: newNull, value: raw };
+      const isNull = trimmed.toLowerCase() === "null" || (trimmed === "" && baselineNull);
+      return { value: raw, isNull };
+    }
+
+    function isCellDirty(rowIndex, columnIndex) {
+      const row = workingRows[rowIndex];
+      if (!row) {
+        return false;
+      }
+
+      const value = row.values[columnIndex] ?? "";
+      const isNull = row.nulls[columnIndex] === true;
+      if (row.isNew) {
+        return isNull || value !== "";
+      }
+
+      const originalRow = originalRows[rowIndex];
+      if (!originalRow) {
+        return isNull || value !== "";
+      }
+
+      const originalValue = originalRow.values[columnIndex] ?? "";
+      const originalNull = originalRow.nulls[columnIndex] === true;
+      return isNull !== originalNull || (!isNull && value !== originalValue);
     }
 
     function updateDirtyState() {
@@ -286,7 +336,7 @@ function buildHtml(state: DataEditorState): string {
       return inputs[index];
     }
 
-    function renderTable() {
+    function renderTable(focusRowIndex) {
       const table = document.getElementById("data-table");
       if (!table) {
         return;
@@ -298,24 +348,36 @@ function buildHtml(state: DataEditorState): string {
       tbody.innerHTML = "";
       inputs.length = 0;
 
-      state.rows.forEach((row, rowIndex) => {
+      workingRows.forEach((row, rowIndex) => {
         const tr = document.createElement("tr");
+        if (row.isNew) {
+          tr.classList.add("new-row");
+        }
         state.columns.forEach((_, columnIndex) => {
           const td = document.createElement("td");
           const input = document.createElement("input");
           const value = row.values[columnIndex] ?? "";
-          const isNull = row.nulls[columnIndex];
+          const isNull = row.nulls[columnIndex] === true;
           input.value = value;
           input.dataset.row = String(rowIndex);
           input.dataset.column = String(columnIndex);
+          input.classList.toggle("dirty", isCellDirty(rowIndex, columnIndex));
+          input.classList.toggle("is-null", isNull);
           if (isNull) {
             input.placeholder = "null";
-            input.classList.add("is-null");
+          } else {
+            input.placeholder = "";
           }
           input.addEventListener("input", () => {
-            const update = computeCellUpdate(input, value, isNull);
-            input.classList.toggle("dirty", update.changed);
-            input.classList.toggle("is-null", update.isNull);
+            const baselineNull = row.isNew
+              ? false
+              : originalRows[rowIndex]?.nulls[columnIndex] === true;
+            const next = computeCellValue(input.value, baselineNull);
+            row.values[columnIndex] = next.value;
+            row.nulls[columnIndex] = next.isNull;
+            input.classList.toggle("dirty", isCellDirty(rowIndex, columnIndex));
+            input.classList.toggle("is-null", next.isNull);
+            input.placeholder = next.isNull ? "null" : "";
             updateDirtyState();
           });
           inputs.push(input);
@@ -325,33 +387,78 @@ function buildHtml(state: DataEditorState): string {
         tbody.appendChild(tr);
       });
       updateDirtyState();
+      if (typeof focusRowIndex === "number") {
+        const firstInput = inputAt(focusRowIndex, 0);
+        if (firstInput) {
+          firstInput.focus();
+        }
+      }
     }
 
     function collectChanges() {
       const changes = [];
-      state.rows.forEach((row, rowIndex) => {
+      workingRows.forEach((row, rowIndex) => {
+        if (row.isNew) {
+          const values = [];
+          state.columns.forEach((_, columnIndex) => {
+            const value = row.values[columnIndex] ?? "";
+            const isNull = row.nulls[columnIndex] === true;
+            if (!isNull && value === "") {
+              return;
+            }
+            values.push({
+              columnIndex,
+              value,
+              isNull
+            });
+          });
+          if (values.length > 0) {
+            changes.push({ kind: "insert", values });
+          }
+          return;
+        }
+
+        const originalRow = originalRows[rowIndex];
+        if (!originalRow) {
+          return;
+        }
+
         const updates = [];
         state.columns.forEach((_, columnIndex) => {
-          const input = inputAt(rowIndex, columnIndex);
-          if (!input) {
+          const value = row.values[columnIndex] ?? "";
+          const isNull = row.nulls[columnIndex] === true;
+          const originalValue = originalRow.values[columnIndex] ?? "";
+          const originalNull = originalRow.nulls[columnIndex] === true;
+          const changed = isNull !== originalNull || (!isNull && value !== originalValue);
+          if (!changed) {
             return;
           }
-          const originalValue = row.values[columnIndex] ?? "";
-          const originalNull = row.nulls[columnIndex];
-          const update = computeCellUpdate(input, originalValue, originalNull);
-          if (update.changed) {
-            updates.push({
-              columnIndex,
-              value: update.value,
-              isNull: update.isNull
-            });
-          }
+          updates.push({
+            columnIndex,
+            value,
+            isNull
+          });
         });
         if (updates.length > 0) {
-          changes.push({ rowIndex, updates });
+          changes.push({ kind: "update", rowIndex, updates });
         }
       });
       return changes;
+    }
+
+    function resetWorkingRows() {
+      workingRows = originalRows.map((row) => ({
+        values: [...row.values],
+        nulls: [...row.nulls],
+        isNew: false
+      }));
+    }
+
+    if (addRowButton) {
+      addRowButton.addEventListener("click", () => {
+        workingRows.push(createEmptyRow());
+        renderTable(workingRows.length - 1);
+      });
     }
 
     if (!state.loading && !state.error) {
@@ -367,6 +474,7 @@ function buildHtml(state: DataEditorState): string {
 
     if (revertButton) {
       revertButton.addEventListener("click", () => {
+        resetWorkingRows();
         renderTable();
       });
     }

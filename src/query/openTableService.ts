@@ -2,8 +2,10 @@ import * as vscode from "vscode";
 import { ConnectionManager } from "../connections/connectionManager";
 import {
   DataEditorChange,
+  DataEditorInsertChange,
   DataEditorPanel,
   DataEditorState,
+  DataEditorUpdateChange,
   EditorRow
 } from "../webviews/dataEditorPanel";
 import { ResultsPanel } from "../webviews/resultsPanel";
@@ -137,7 +139,7 @@ export class OpenTableService {
 
     const table = this.activeTable;
     const state = this.activeState;
-    if (!table || !state || state.rows.length === 0) {
+    if (!table || !state || state.columns.length === 0) {
       void vscode.window.showWarningMessage("Reload the table before saving changes.");
       return;
     }
@@ -148,27 +150,28 @@ export class OpenTableService {
       return;
     }
 
-    const limit = this.normalizeLimit(this.rowLimit);
-    const loadingState: DataEditorState = {
-      schemaName: table.schemaName,
-      tableName: table.tableName,
-      columns: state.columns,
-      rows: state.rows,
-      rowLimit: limit,
-      loading: true
-    };
-    this.panel?.showState(loadingState);
-
     try {
       const client = await pool.connect();
       let updatedRows = 0;
+      let insertedRows = 0;
       try {
         await client.query("BEGIN");
         for (const change of changes) {
+          if (change.kind === "insert") {
+            const statement = this.buildInsertStatement(table, state.columns, change);
+            if (!statement) {
+              continue;
+            }
+            const result = await client.query(statement.sql, statement.values);
+            insertedRows += result.rowCount ?? 0;
+            continue;
+          }
+
           const rowToken = this.activeRowTokens[change.rowIndex];
           if (!rowToken) {
             continue;
           }
+
           const statement = this.buildUpdateStatement(table, state.columns, change, rowToken);
           if (!statement) {
             continue;
@@ -184,21 +187,28 @@ export class OpenTableService {
         client.release();
       }
 
+      const summaryParts: string[] = [];
+      if (updatedRows > 0) {
+        summaryParts.push(`${updatedRows} updated`);
+      }
+      if (insertedRows > 0) {
+        summaryParts.push(`${insertedRows} inserted`);
+      }
+      const summary = summaryParts.length > 0 ? summaryParts.join(", ") : "no rows affected";
       void vscode.window.showInformationMessage(
-        `Saved changes to ${updatedRows} row${updatedRows === 1 ? "" : "s"}.`
+        `Saved changes: ${summary}.`
       );
       await this.reload();
     } catch (error) {
       const message = error instanceof Error ? error.message : "Failed to save changes.";
       void vscode.window.showErrorMessage(message);
-      await this.reload();
     }
   }
 
   private buildUpdateStatement(
     table: TableContext,
     columns: string[],
-    change: DataEditorChange,
+    change: DataEditorUpdateChange,
     rowToken: string
   ): { sql: string; values: unknown[] } | undefined {
     if (!change.updates.length) {
@@ -227,6 +237,47 @@ export class OpenTableService {
     const sql = `UPDATE ${qualified} SET ${setClauses.join(", ")} WHERE ctid = $${
       values.length
     }::tid;`;
+
+    return { sql, values };
+  }
+
+  private buildInsertStatement(
+    table: TableContext,
+    columns: string[],
+    change: DataEditorInsertChange
+  ): { sql: string; values: unknown[] } | undefined {
+    if (!change.values.length) {
+      return undefined;
+    }
+
+    const columnNames: string[] = [];
+    const placeholders: string[] = [];
+    const values: unknown[] = [];
+    const seenColumns = new Set<number>();
+    for (const update of change.values) {
+      if (seenColumns.has(update.columnIndex)) {
+        continue;
+      }
+      const columnName = columns[update.columnIndex];
+      if (!columnName) {
+        continue;
+      }
+      seenColumns.add(update.columnIndex);
+      columnNames.push(this.quoteIdentifier(columnName));
+      placeholders.push(`$${values.length + 1}`);
+      values.push(update.isNull ? null : update.value);
+    }
+
+    if (columnNames.length === 0) {
+      return undefined;
+    }
+
+    const qualified = `${this.quoteIdentifier(table.schemaName)}.${this.quoteIdentifier(
+      table.tableName
+    )}`;
+    const sql = `INSERT INTO ${qualified} (${columnNames.join(", ")}) VALUES (${placeholders.join(
+      ", "
+    )});`;
 
     return { sql, values };
   }
