@@ -60,6 +60,11 @@ export class ConnectionManager {
     await this.secrets.delete(passwordKey);
   }
 
+  async storePassword(profileId: string, password: string): Promise<void> {
+    const passwordKey = `${ConnectionManager.passwordKeyPrefix}${profileId}`;
+    await this.secrets.store(passwordKey, password);
+  }
+
   async connect(profileId: string): Promise<void> {
     const profile = this.listProfiles().find((item) => item.id === profileId);
     if (!profile) {

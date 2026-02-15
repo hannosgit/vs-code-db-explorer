@@ -15,9 +15,13 @@ class ConnectionItem extends vscode.TreeItem {
 }
 
 class PlaceholderItem extends vscode.TreeItem {
-  constructor(label: string) {
+  constructor(label: string, command?: vscode.Command) {
     super(label, vscode.TreeItemCollapsibleState.None);
     this.contextValue = "dbPlaceholder";
+    this.command = command;
+    if (command) {
+      this.iconPath = new vscode.ThemeIcon("add");
+    }
   }
 }
 
@@ -42,7 +46,10 @@ export class ConnectionsTreeDataProvider implements vscode.TreeDataProvider<vsco
     if (profiles.length === 0) {
       return [
         new PlaceholderItem("No profiles configured"),
-        new PlaceholderItem("Add profiles in settings.json")
+        new PlaceholderItem("Create a connection profile", {
+          command: "dbExplorer.addConnection",
+          title: "DB Explorer: Add Connection"
+        })
       ];
     }
 

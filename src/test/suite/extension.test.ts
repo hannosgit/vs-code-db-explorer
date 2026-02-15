@@ -24,6 +24,7 @@ describe("DB Explorer extension", () => {
     const commands = await vscode.commands.getCommands(true);
 
     const expected = [
+      "dbExplorer.addConnection",
       "dbExplorer.connect",
       "dbExplorer.disconnect",
       "dbExplorer.refreshSchema",

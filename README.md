@@ -10,7 +10,7 @@ Early scaffold for a PostgreSQL-focused VS Code extension.
 
 ## Configuration
 
-Add connection profiles to your user or workspace settings:
+Create a profile from the Command Palette with `DB Explorer: Add Connection`, or add profiles manually to your user or workspace settings:
 
 ```json
 "dbExplorer.profiles": [

@@ -64,7 +64,7 @@ describe("ConnectionsTreeDataProvider", () => {
     }
     assert.strictEqual(children.length, 2);
     assert.strictEqual(readLabel(children[0]), "No profiles configured");
-    assert.strictEqual(readLabel(children[1]), "Add profiles in settings.json");
+    assert.strictEqual(readLabel(children[1]), "Create a connection profile");
   });
 
   it("lists configured connection profiles", async () => {

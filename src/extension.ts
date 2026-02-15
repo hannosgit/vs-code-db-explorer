@@ -1,5 +1,6 @@
 import * as vscode from "vscode";
 import { ConnectionManager } from "./connections/connectionManager";
+import { promptForNewConnection } from "./connections/createConnectionProfile";
 import { OpenTableService } from "./query/openTableService";
 import { runCancelableQuery } from "./query/queryRunner";
 import { getSqlToRun } from "./query/sqlText";
@@ -10,6 +11,12 @@ import { ResultsPanel } from "./webviews/resultsPanel";
 import { showNotImplemented } from "./utils/notifications";
 
 const lastProfileStateKey = "dbExplorer.lastProfileId";
+
+function getProfilesTarget(): vscode.ConfigurationTarget {
+  return vscode.workspace.workspaceFolders
+    ? vscode.ConfigurationTarget.Workspace
+    : vscode.ConfigurationTarget.Global;
+}
 
 export function activate(context: vscode.ExtensionContext): void {
   const connectionManager = new ConnectionManager(context.secrets);
@@ -40,11 +47,53 @@ export function activate(context: vscode.ExtensionContext): void {
   });
 
   context.subscriptions.push(
+    vscode.commands.registerCommand("dbExplorer.addConnection", async () => {
+      const existingProfiles = connectionManager.listProfiles();
+      const input = await promptForNewConnection(existingProfiles);
+      if (!input) {
+        return;
+      }
+
+      const config = vscode.workspace.getConfiguration("dbExplorer");
+      await config.update(
+        "profiles",
+        [...existingProfiles, input.profile],
+        getProfilesTarget()
+      );
+
+      if (input.password !== undefined) {
+        await connectionManager.storePassword(input.profile.id, input.password);
+      }
+
+      connectionsProvider.refresh();
+
+      const action = await vscode.window.showInformationMessage(
+        `Added connection "${input.profile.label}".`,
+        "Connect now"
+      );
+
+      if (action !== "Connect now") {
+        return;
+      }
+
+      try {
+        await connectionManager.connect(input.profile.id);
+        connectionsProvider.refresh();
+        schemaProvider.refresh();
+      } catch (error) {
+        if (error instanceof Error && error.message === "Connection canceled.") {
+          return;
+        }
+        const message =
+          error instanceof Error ? error.message : "Failed to connect to DB.";
+        void vscode.window.showErrorMessage(message);
+      }
+    }),
     vscode.commands.registerCommand("dbExplorer.connect", async () => {
       const profiles = connectionManager.listProfiles();
       if (profiles.length === 0) {
         void vscode.window.showWarningMessage(
-          "No profiles configured. Add profiles in settings.json."
+          "No profiles configured. Run \"DB Explorer: Add Connection\" or edit settings.json."
         );
         return;
       }
@@ -135,7 +184,7 @@ export function activate(context: vscode.ExtensionContext): void {
       const profiles = connectionManager.listProfiles();
       if (profiles.length === 0) {
         void vscode.window.showWarningMessage(
-          "No profiles configured. Add profiles in settings.json."
+          "No profiles configured. Run \"DB Explorer: Add Connection\" or edit settings.json."
         );
         return;
       }
