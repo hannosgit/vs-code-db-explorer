@@ -2,6 +2,10 @@
   "name": "db-explorer",
   "displayName": "DB Explorer",
   "description": "VS Code extension for Database browsing, queries, and data editing.",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/hannosgit/vs-code-db-explorer"
+  },
   "version": "0.0.1",
   "publisher": "local",
   "engines": {
