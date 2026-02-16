@@ -1,6 +1,7 @@
 # DB Explorer (VS Code Extension)
 
-Early scaffold for a PostgreSQL-focused VS Code extension.
+VS Code extension for working with databases.
+Currently only PostgreSQL is supported.
 
 ## Development
 
