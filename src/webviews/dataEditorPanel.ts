@@ -84,7 +84,6 @@ export class DataEditorPanel {
     private readonly panel: vscode.WebviewPanel,
     private readonly extensionUri: vscode.Uri
   ) {
-    void this.extensionUri;
     this.panel.onDidDispose(() => {
       if (DataEditorPanel.currentPanel === this) {
         DataEditorPanel.currentPanel = undefined;
@@ -128,12 +127,24 @@ export class DataEditorPanel {
 
   showState(state: DataEditorState): void {
     this.panel.title = `Data Editor: ${state.schemaName}.${state.tableName}`;
-    this.panel.webview.html = buildHtml(state);
+    this.panel.webview.html = buildHtml(this.panel.webview, this.extensionUri, state);
   }
 }
 
-function buildHtml(state: DataEditorState): string {
+function buildHtml(
+  webview: vscode.Webview,
+  extensionUri: vscode.Uri,
+  state: DataEditorState
+): string {
   const safeState = JSON.stringify(state).replace(/</g, "\\u003c");
+  const scriptUri = webview.asWebviewUri(
+    vscode.Uri.joinPath(extensionUri, "dist", "webviews", "dataEditorUi.js")
+  );
+  const csp = [
+    "default-src 'none'",
+    `style-src ${webview.cspSource} 'unsafe-inline'`,
+    `script-src ${webview.cspSource}`
+  ].join("; ");
   const headerTitle = `${escapeHtml(state.schemaName)}.${escapeHtml(state.tableName)}`;
   const rowCount = state.rows.length;
   const rowSummary = `Page ${state.pageNumber} • ${rowCount} rows loaded (page size ${state.pageSize}).`;
@@ -151,6 +162,7 @@ function buildHtml(state: DataEditorState): string {
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta http-equiv="Content-Security-Policy" content="${csp}" />
   <title>DB Explorer Data Editor</title>
   <style>
     :root {
@@ -318,311 +330,8 @@ function buildHtml(state: DataEditorState): string {
   </header>
   <div class="note">Tip: use <strong>Add row</strong> to insert and type <strong>NULL</strong> to set a value to NULL.</div>
   ${body}
-  <script>
-    const state = ${safeState};
-    const vscode = acquireVsCodeApi();
-    const addRowButton = document.getElementById("add-row");
-    const saveButton = document.getElementById("save");
-    const revertButton = document.getElementById("revert");
-    const refreshButton = document.getElementById("refresh");
-    const prevPageButton = document.getElementById("page-prev");
-    const nextPageButton = document.getElementById("page-next");
-    const cellControls = [];
-    const ENUM_NULL_VALUE = "__db_explorer_enum_null__";
-    const originalRows = state.rows.map((row) => ({
-      values: [...row.values],
-      nulls: [...row.nulls]
-    }));
-    let workingRows = originalRows.map((row) => ({
-      values: [...row.values],
-      nulls: [...row.nulls],
-      isNew: false
-    }));
-
-    if (refreshButton) {
-      refreshButton.addEventListener("click", () => {
-        vscode.postMessage({ command: "refresh" });
-      });
-    }
-
-    function canNavigatePage() {
-      if (!saveButton || saveButton.disabled) {
-        return true;
-      }
-      return window.confirm("You have unsaved changes on this page. Continue and discard them?");
-    }
-
-    if (prevPageButton) {
-      prevPageButton.addEventListener("click", () => {
-        if (!canNavigatePage()) {
-          return;
-        }
-        vscode.postMessage({ command: "page", direction: "previous" });
-      });
-    }
-
-    if (nextPageButton) {
-      nextPageButton.addEventListener("click", () => {
-        if (!canNavigatePage()) {
-          return;
-        }
-        vscode.postMessage({ command: "page", direction: "next" });
-      });
-    }
-
-    function createEmptyRow() {
-      return {
-        values: state.columns.map(() => ""),
-        nulls: state.columns.map(() => false),
-        isNew: true
-      };
-    }
-
-    function computeCellValue(raw, baselineNull) {
-      const trimmed = raw.trim();
-      const isNull = trimmed.toLowerCase() === "null" || (trimmed === "" && baselineNull);
-      return { value: raw, isNull };
-    }
-
-    function isCellDirty(rowIndex, columnIndex) {
-      const row = workingRows[rowIndex];
-      if (!row) {
-        return false;
-      }
-
-      const value = row.values[columnIndex] ?? "";
-      const isNull = row.nulls[columnIndex] === true;
-      if (row.isNew) {
-        return isNull || value !== "";
-      }
-
-      const originalRow = originalRows[rowIndex];
-      if (!originalRow) {
-        return isNull || value !== "";
-      }
-
-      const originalValue = originalRow.values[columnIndex] ?? "";
-      const originalNull = originalRow.nulls[columnIndex] === true;
-      return isNull !== originalNull || (!isNull && value !== originalValue);
-    }
-
-    function updateDirtyState() {
-      const dirtyCount = cellControls.filter((control) => control.classList.contains("dirty")).length;
-      if (saveButton) {
-        saveButton.disabled = dirtyCount === 0;
-      }
-      if (revertButton) {
-        revertButton.disabled = dirtyCount === 0;
-      }
-    }
-
-    function inputAt(rowIndex, columnIndex) {
-      const columnsCount = state.columns.length;
-      const index = rowIndex * columnsCount + columnIndex;
-      return cellControls[index];
-    }
-
-    function enumValuesForColumn(columnIndex) {
-      if (!Array.isArray(state.columnEnumValues)) {
-        return [];
-      }
-      const values = state.columnEnumValues[columnIndex];
-      if (!Array.isArray(values)) {
-        return [];
-      }
-      return values.filter((value) => typeof value === "string");
-    }
-
-    function renderTable(focusRowIndex) {
-      const table = document.getElementById("data-table");
-      if (!table) {
-        return;
-      }
-      const tbody = table.querySelector("tbody");
-      if (!tbody) {
-        return;
-      }
-      tbody.innerHTML = "";
-      cellControls.length = 0;
-      const rowNumberOffset = Math.max(0, (state.pageNumber - 1) * state.pageSize);
-
-      workingRows.forEach((row, rowIndex) => {
-        const tr = document.createElement("tr");
-        if (row.isNew) {
-          tr.classList.add("new-row");
-        }
-        const rowNumberCell = document.createElement("td");
-        rowNumberCell.classList.add("row-number");
-        rowNumberCell.textContent = String(rowNumberOffset + rowIndex + 1);
-        tr.appendChild(rowNumberCell);
-        state.columns.forEach((_, columnIndex) => {
-          const td = document.createElement("td");
-          const enumValues = row.isNew ? enumValuesForColumn(columnIndex) : [];
-          if (enumValues.length > 0) {
-            const select = document.createElement("select");
-            const value = row.values[columnIndex] ?? "";
-            const isNull = row.nulls[columnIndex] === true;
-            const placeholderOption = document.createElement("option");
-            placeholderOption.value = "";
-            placeholderOption.textContent = "(unset)";
-            select.appendChild(placeholderOption);
-            const nullOption = document.createElement("option");
-            nullOption.value = ENUM_NULL_VALUE;
-            nullOption.textContent = "NULL";
-            select.appendChild(nullOption);
-            enumValues.forEach((enumValue) => {
-              const option = document.createElement("option");
-              option.value = enumValue;
-              option.textContent = enumValue;
-              select.appendChild(option);
-            });
-            select.value = isNull ? ENUM_NULL_VALUE : value;
-            if (select.value !== (isNull ? ENUM_NULL_VALUE : value)) {
-              select.value = "";
-            }
-            select.dataset.row = String(rowIndex);
-            select.dataset.column = String(columnIndex);
-            select.classList.toggle("dirty", isCellDirty(rowIndex, columnIndex));
-            select.classList.toggle("is-null", isNull);
-            select.addEventListener("change", () => {
-              const nextValue = select.value;
-              const nextIsNull = nextValue === ENUM_NULL_VALUE;
-              row.values[columnIndex] = nextIsNull ? "" : nextValue;
-              row.nulls[columnIndex] = nextIsNull;
-              select.classList.toggle("dirty", isCellDirty(rowIndex, columnIndex));
-              select.classList.toggle("is-null", nextIsNull);
-              updateDirtyState();
-            });
-            cellControls.push(select);
-            td.appendChild(select);
-            tr.appendChild(td);
-            return;
-          }
-
-          const input = document.createElement("input");
-          const value = row.values[columnIndex] ?? "";
-          const isNull = row.nulls[columnIndex] === true;
-          input.value = value;
-          input.dataset.row = String(rowIndex);
-          input.dataset.column = String(columnIndex);
-          input.classList.toggle("dirty", isCellDirty(rowIndex, columnIndex));
-          input.classList.toggle("is-null", isNull);
-          if (isNull) {
-            input.placeholder = "null";
-          } else {
-            input.placeholder = "";
-          }
-          input.addEventListener("input", () => {
-            const baselineNull = row.isNew
-              ? false
-              : originalRows[rowIndex]?.nulls[columnIndex] === true;
-            const next = computeCellValue(input.value, baselineNull);
-            row.values[columnIndex] = next.value;
-            row.nulls[columnIndex] = next.isNull;
-            input.classList.toggle("dirty", isCellDirty(rowIndex, columnIndex));
-            input.classList.toggle("is-null", next.isNull);
-            input.placeholder = next.isNull ? "null" : "";
-            updateDirtyState();
-          });
-          cellControls.push(input);
-          td.appendChild(input);
-          tr.appendChild(td);
-        });
-        tbody.appendChild(tr);
-      });
-      updateDirtyState();
-      if (typeof focusRowIndex === "number") {
-        const firstInput = inputAt(focusRowIndex, 0);
-        if (firstInput) {
-          firstInput.focus();
-        }
-      }
-    }
-
-    function collectChanges() {
-      const changes = [];
-      workingRows.forEach((row, rowIndex) => {
-        if (row.isNew) {
-          const values = [];
-          state.columns.forEach((_, columnIndex) => {
-            const value = row.values[columnIndex] ?? "";
-            const isNull = row.nulls[columnIndex] === true;
-            if (!isNull && value === "") {
-              return;
-            }
-            values.push({
-              columnIndex,
-              value,
-              isNull
-            });
-          });
-          if (values.length > 0) {
-            changes.push({ kind: "insert", values });
-          }
-          return;
-        }
-
-        const originalRow = originalRows[rowIndex];
-        if (!originalRow) {
-          return;
-        }
-
-        const updates = [];
-        state.columns.forEach((_, columnIndex) => {
-          const value = row.values[columnIndex] ?? "";
-          const isNull = row.nulls[columnIndex] === true;
-          const originalValue = originalRow.values[columnIndex] ?? "";
-          const originalNull = originalRow.nulls[columnIndex] === true;
-          const changed = isNull !== originalNull || (!isNull && value !== originalValue);
-          if (!changed) {
-            return;
-          }
-          updates.push({
-            columnIndex,
-            value,
-            isNull
-          });
-        });
-        if (updates.length > 0) {
-          changes.push({ kind: "update", rowIndex, updates });
-        }
-      });
-      return changes;
-    }
-
-    function resetWorkingRows() {
-      workingRows = originalRows.map((row) => ({
-        values: [...row.values],
-        nulls: [...row.nulls],
-        isNew: false
-      }));
-    }
-
-    if (addRowButton) {
-      addRowButton.addEventListener("click", () => {
-        workingRows.push(createEmptyRow());
-        renderTable(workingRows.length - 1);
-      });
-    }
-
-    if (!state.loading && !state.error) {
-      renderTable();
-    }
-
-    if (saveButton) {
-      saveButton.addEventListener("click", () => {
-        const changes = collectChanges();
-        vscode.postMessage({ command: "save", changes });
-      });
-    }
-
-    if (revertButton) {
-      revertButton.addEventListener("click", () => {
-        resetWorkingRows();
-        renderTable();
-      });
-    }
-  </script>
+  <textarea id="initial-state" hidden>${safeState}</textarea>
+  <script src="${scriptUri}" defer></script>
 </body>
 </html>`;
 }
