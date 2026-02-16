@@ -233,4 +233,75 @@ describe("OpenTableService helpers", () => {
     );
     assert.deepStrictEqual(failingTypes, ["", ""]);
   });
+
+  it("loads enum values from postgres metadata", async () => {
+    let calledSql = "";
+    let calledParams: unknown[] | undefined;
+    const pool: FakePool = {
+      query: async (sql: string, params?: unknown[]) => {
+        calledSql = sql;
+        calledParams = params;
+        return {
+          rows: [
+            { column_name: "status", enum_value: "draft" },
+            { column_name: "status", enum_value: "published" },
+            { column_name: "priority", enum_value: "low" },
+            { column_name: "priority", enum_value: "high" }
+          ]
+        };
+      }
+    };
+
+    const service = createService(() => pool);
+    const loadColumnEnumValues = (service as unknown as {
+      loadColumnEnumValues: (
+        table: { schemaName: string; tableName: string },
+        columns: string[]
+      ) => Promise<string[][]>;
+    }).loadColumnEnumValues.bind(service);
+
+    const enumValues = await loadColumnEnumValues(
+      { schemaName: "public", tableName: "posts" },
+      ["id", "status", "priority", "missing"]
+    );
+
+    assert.ok(calledSql.includes("FROM pg_catalog.pg_attribute"));
+    assert.ok(calledSql.includes("JOIN pg_catalog.pg_enum"));
+    assert.deepStrictEqual(calledParams, ["public", "posts"]);
+    assert.deepStrictEqual(enumValues, [[], ["draft", "published"], ["low", "high"], []]);
+  });
+
+  it("returns empty enum values when pool is unavailable or query fails", async () => {
+    const serviceNoPool = createService(() => undefined);
+    const loadColumnEnumValuesNoPool = (serviceNoPool as unknown as {
+      loadColumnEnumValues: (
+        table: { schemaName: string; tableName: string },
+        columns: string[]
+      ) => Promise<string[][]>;
+    }).loadColumnEnumValues.bind(serviceNoPool);
+
+    const noPoolValues = await loadColumnEnumValuesNoPool(
+      { schemaName: "public", tableName: "users" },
+      ["id"]
+    );
+    assert.deepStrictEqual(noPoolValues, []);
+
+    const serviceWithFailingPool = createService(() => ({
+      query: async () => {
+        throw new Error("failed");
+      }
+    }));
+    const loadColumnEnumValuesFailing = (serviceWithFailingPool as unknown as {
+      loadColumnEnumValues: (
+        table: { schemaName: string; tableName: string },
+        columns: string[]
+      ) => Promise<string[][]>;
+    }).loadColumnEnumValues.bind(serviceWithFailingPool);
+
+    const failingValues = await loadColumnEnumValuesFailing(
+      { schemaName: "public", tableName: "users" },
+      ["id", "status"]
+    );
+    assert.deepStrictEqual(failingValues, [[], []]);
+  });
 });

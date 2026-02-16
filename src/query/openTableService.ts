@@ -105,6 +105,27 @@ export class OpenTableService {
     `;
   }
 
+  private buildColumnEnumValuesSql(): string {
+    return `
+      SELECT a.attname AS column_name, e.enumlabel AS enum_value
+      FROM pg_catalog.pg_attribute a
+      JOIN pg_catalog.pg_class c ON c.oid = a.attrelid
+      JOIN pg_catalog.pg_namespace n ON n.oid = c.relnamespace
+      JOIN pg_catalog.pg_type t ON t.oid = a.atttypid
+      JOIN pg_catalog.pg_type et ON et.oid = CASE
+        WHEN t.typtype = 'd' THEN t.typbasetype
+        ELSE t.oid
+      END
+      JOIN pg_catalog.pg_enum e ON e.enumtypid = et.oid
+      WHERE n.nspname = $1
+        AND c.relname = $2
+        AND a.attnum > 0
+        AND NOT a.attisdropped
+        AND et.typtype = 'e'
+      ORDER BY a.attnum, e.enumsortorder;
+    `;
+  }
+
   private async loadColumnTypes(
     table: TableContext,
     columns: string[]
@@ -127,6 +148,38 @@ export class OpenTableService {
       return columns.map((columnName) => typeByColumn.get(columnName) ?? "");
     } catch {
       return columns.map(() => "");
+    }
+  }
+
+  private async loadColumnEnumValues(
+    table: TableContext,
+    columns: string[]
+  ): Promise<string[][]> {
+    const pool = this.connectionManager.getPool();
+    if (!pool || columns.length === 0) {
+      return [];
+    }
+
+    try {
+      const result = await pool.query(this.buildColumnEnumValuesSql(), [table.schemaName, table.tableName]);
+      const enumValuesByColumn = new Map<string, string[]>();
+      for (const row of result.rows as Record<string, unknown>[]) {
+        const columnName = row.column_name;
+        const enumValue = row.enum_value;
+        if (typeof columnName !== "string" || typeof enumValue !== "string") {
+          continue;
+        }
+
+        const existing = enumValuesByColumn.get(columnName);
+        if (existing) {
+          existing.push(enumValue);
+        } else {
+          enumValuesByColumn.set(columnName, [enumValue]);
+        }
+      }
+      return columns.map((columnName) => enumValuesByColumn.get(columnName) ?? []);
+    } catch {
+      return columns.map(() => []);
     }
   }
 
@@ -156,7 +209,10 @@ export class OpenTableService {
       const columns = result.fields
         .map((field) => field.name)
         .filter((fieldName) => fieldName !== ROW_TOKEN_ALIAS);
-      const columnTypes = await this.loadColumnTypes(this.activeTable, columns);
+      const [columnTypes, columnEnumValues] = await Promise.all([
+        this.loadColumnTypes(this.activeTable, columns),
+        this.loadColumnEnumValues(this.activeTable, columns)
+      ]);
       const hasNextPage = result.rows.length > pageSize;
       const visibleRows = hasNextPage ? result.rows.slice(0, pageSize) : result.rows;
       const rowTokens: string[] = [];
@@ -170,6 +226,7 @@ export class OpenTableService {
         tableName: this.activeTable.tableName,
         columns,
         columnTypes,
+        columnEnumValues,
         rows,
         pageSize,
         pageNumber: this.currentPage + 1,

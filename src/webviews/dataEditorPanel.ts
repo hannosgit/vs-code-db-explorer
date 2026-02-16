@@ -10,6 +10,7 @@ export interface DataEditorState {
   tableName: string;
   columns: string[];
   columnTypes?: string[];
+  columnEnumValues?: string[][];
   rows: EditorRow[];
   pageSize: number;
   pageNumber: number;
@@ -261,7 +262,8 @@ function buildHtml(state: DataEditorState): string {
     th.row-number {
       font-weight: 600;
     }
-    td input {
+    td input,
+    td select {
       width: 100%;
       box-sizing: border-box;
       border: none;
@@ -270,15 +272,18 @@ function buildHtml(state: DataEditorState): string {
       padding: 6px 8px;
       font: inherit;
     }
-    td input:focus {
+    td input:focus,
+    td select:focus {
       outline: 1px solid var(--vscode-focusBorder);
       outline-offset: -1px;
     }
-    td input.is-null {
+    td input.is-null,
+    td select.is-null {
       color: var(--vscode-descriptionForeground);
       font-style: italic;
     }
-    td input.dirty {
+    td input.dirty,
+    td select.dirty {
       background: var(--vscode-editor-wordHighlightBackground);
     }
     tr.new-row td {
@@ -322,7 +327,8 @@ function buildHtml(state: DataEditorState): string {
     const refreshButton = document.getElementById("refresh");
     const prevPageButton = document.getElementById("page-prev");
     const nextPageButton = document.getElementById("page-next");
-    const inputs = [];
+    const cellControls = [];
+    const ENUM_NULL_VALUE = "__db_explorer_enum_null__";
     const originalRows = state.rows.map((row) => ({
       values: [...row.values],
       nulls: [...row.nulls]
@@ -401,7 +407,7 @@ function buildHtml(state: DataEditorState): string {
     }
 
     function updateDirtyState() {
-      const dirtyCount = inputs.filter((input) => input.classList.contains("dirty")).length;
+      const dirtyCount = cellControls.filter((control) => control.classList.contains("dirty")).length;
       if (saveButton) {
         saveButton.disabled = dirtyCount === 0;
       }
@@ -413,7 +419,18 @@ function buildHtml(state: DataEditorState): string {
     function inputAt(rowIndex, columnIndex) {
       const columnsCount = state.columns.length;
       const index = rowIndex * columnsCount + columnIndex;
-      return inputs[index];
+      return cellControls[index];
+    }
+
+    function enumValuesForColumn(columnIndex) {
+      if (!Array.isArray(state.columnEnumValues)) {
+        return [];
+      }
+      const values = state.columnEnumValues[columnIndex];
+      if (!Array.isArray(values)) {
+        return [];
+      }
+      return values.filter((value) => typeof value === "string");
     }
 
     function renderTable(focusRowIndex) {
@@ -426,7 +443,7 @@ function buildHtml(state: DataEditorState): string {
         return;
       }
       tbody.innerHTML = "";
-      inputs.length = 0;
+      cellControls.length = 0;
       const rowNumberOffset = Math.max(0, (state.pageNumber - 1) * state.pageSize);
 
       workingRows.forEach((row, rowIndex) => {
@@ -440,6 +457,48 @@ function buildHtml(state: DataEditorState): string {
         tr.appendChild(rowNumberCell);
         state.columns.forEach((_, columnIndex) => {
           const td = document.createElement("td");
+          const enumValues = row.isNew ? enumValuesForColumn(columnIndex) : [];
+          if (enumValues.length > 0) {
+            const select = document.createElement("select");
+            const value = row.values[columnIndex] ?? "";
+            const isNull = row.nulls[columnIndex] === true;
+            const placeholderOption = document.createElement("option");
+            placeholderOption.value = "";
+            placeholderOption.textContent = "(unset)";
+            select.appendChild(placeholderOption);
+            const nullOption = document.createElement("option");
+            nullOption.value = ENUM_NULL_VALUE;
+            nullOption.textContent = "NULL";
+            select.appendChild(nullOption);
+            enumValues.forEach((enumValue) => {
+              const option = document.createElement("option");
+              option.value = enumValue;
+              option.textContent = enumValue;
+              select.appendChild(option);
+            });
+            select.value = isNull ? ENUM_NULL_VALUE : value;
+            if (select.value !== (isNull ? ENUM_NULL_VALUE : value)) {
+              select.value = "";
+            }
+            select.dataset.row = String(rowIndex);
+            select.dataset.column = String(columnIndex);
+            select.classList.toggle("dirty", isCellDirty(rowIndex, columnIndex));
+            select.classList.toggle("is-null", isNull);
+            select.addEventListener("change", () => {
+              const nextValue = select.value;
+              const nextIsNull = nextValue === ENUM_NULL_VALUE;
+              row.values[columnIndex] = nextIsNull ? "" : nextValue;
+              row.nulls[columnIndex] = nextIsNull;
+              select.classList.toggle("dirty", isCellDirty(rowIndex, columnIndex));
+              select.classList.toggle("is-null", nextIsNull);
+              updateDirtyState();
+            });
+            cellControls.push(select);
+            td.appendChild(select);
+            tr.appendChild(td);
+            return;
+          }
+
           const input = document.createElement("input");
           const value = row.values[columnIndex] ?? "";
           const isNull = row.nulls[columnIndex] === true;
@@ -465,7 +524,7 @@ function buildHtml(state: DataEditorState): string {
             input.placeholder = next.isNull ? "null" : "";
             updateDirtyState();
           });
-          inputs.push(input);
+          cellControls.push(input);
           td.appendChild(input);
           tr.appendChild(td);
         });
