@@ -7,7 +7,7 @@
     "url": "https://github.com/hannosgit/vs-code-db-explorer"
   },
   "version": "0.0.1",
-  "publisher": "local",
+  "publisher": "hannos",
   "engines": {
     "vscode": "^1.85.0"
   },
