@@ -130,6 +130,44 @@ export class SchemaTreeDataProvider implements vscode.TreeDataProvider<SchemaNod
     }
   }
 
+  async truncateTable(item?: unknown): Promise<void> {
+    const table = this.toTableContext(item);
+    if (!table) {
+      void vscode.window.showWarningMessage("Select a table in the DB Schema view.");
+      return;
+    }
+
+    const pool = this.connectionManager.getPool();
+    if (!pool) {
+      void vscode.window.showWarningMessage("Connect to a DB profile first.");
+      return;
+    }
+
+    const displayName = `${table.schemaName}.${table.tableName}`;
+    const action = await vscode.window.showWarningMessage(
+      `Truncate table ${displayName}?`,
+      { modal: true, detail: "This will delete all rows and cannot be undone." },
+      "Truncate Table"
+    );
+
+    if (action !== "Truncate Table") {
+      return;
+    }
+
+    const qualifiedName = `${this.quoteIdentifier(table.schemaName)}.${this.quoteIdentifier(
+      table.tableName
+    )}`;
+
+    try {
+      await pool.query(`TRUNCATE TABLE ${qualifiedName}`);
+      this.refresh();
+      void vscode.window.showInformationMessage(`Truncated table ${displayName}.`);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Unknown error";
+      void vscode.window.showErrorMessage(`Failed to truncate table ${displayName}: ${message}`);
+    }
+  }
+
   getTreeItem(element: SchemaNode): vscode.TreeItem {
     return element;
   }

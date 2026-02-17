@@ -55,6 +55,10 @@
         "title": "DB Explorer: Drop Table"
       },
       {
+        "command": "dbExplorer.truncateTable",
+        "title": "DB Explorer: Truncate Table"
+      },
+      {
         "command": "dbExplorer.exportResults",
         "title": "DB Explorer: Export Results"
       },
@@ -110,6 +114,11 @@
           "command": "dbExplorer.dropTable",
           "when": "view == dbSchema && viewItem == dbTable",
           "group": "navigation@20"
+        },
+        {
+          "command": "dbExplorer.truncateTable",
+          "when": "view == dbSchema && viewItem == dbTable",
+          "group": "navigation@19"
         }
       ],
       "view/title": [

@@ -273,6 +273,9 @@ export function activate(context: vscode.ExtensionContext): void {
     vscode.commands.registerCommand("dbExplorer.dropTable", (item?: unknown) =>
       schemaProvider.dropTable(item)
     ),
+    vscode.commands.registerCommand("dbExplorer.truncateTable", (item?: unknown) =>
+      schemaProvider.truncateTable(item)
+    ),
     vscode.commands.registerCommand("dbExplorer.exportResults", () => {
       showNotImplemented("Export Results");
     }),

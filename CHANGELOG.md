@@ -4,7 +4,8 @@
 
 ### Enchancements
 
-- Add `Drop Table` command in Schema Tree
+- Add `Drop Table` context menu command for schema table nodes
+- Add `Truncate Table` context menu command for schema table nodes
 
 ## 0.0.2
 
