@@ -23,48 +23,59 @@
     "commands": [
       {
         "command": "dbExplorer.addConnection",
-        "title": "DB Explorer: Add Connection"
+        "title": "Add Connection",
+        "category": "DB Explorer"
       },
       {
         "command": "dbExplorer.connect",
-        "title": "DB Explorer: Connect"
+        "title": "Connect",
+        "category": "DB Explorer"
       },
       {
         "command": "dbExplorer.disconnect",
-        "title": "DB Explorer: Disconnect"
+        "title": "Disconnect",
+        "category": "DB Explorer"
       },
       {
         "command": "dbExplorer.refreshSchema",
-        "title": "DB Explorer: Refresh Schema"
+        "title": "Refresh Schema",
+        "category": "DB Explorer"
       },
       {
         "command": "dbExplorer.runQuery",
-        "title": "DB Explorer: Run Query"
+        "title": "Run Query",
+        "category": "DB Explorer"
       },
       {
         "command": "dbExplorer.runAllStatements",
-        "title": "DB Explorer: Run All Statements",
+        "title": "Run All Statements",
+        "category": "DB Explorer",
         "icon": "$(play)"
       },
       {
         "command": "dbExplorer.openTable",
-        "title": "DB Explorer: Open Table"
+        "title": "Open Table",
+        "category": "DB Explorer"
       },
       {
         "command": "dbExplorer.dropTable",
-        "title": "DB Explorer: Drop Table"
+        "title": "Drop Table",
+        "category": "DB Explorer"
       },
       {
         "command": "dbExplorer.truncateTable",
-        "title": "DB Explorer: Truncate Table"
+        "title": "Truncate Table",
+        "category": "DB Explorer"
       },
       {
         "command": "dbExplorer.exportResults",
-        "title": "DB Explorer: Export Results"
+        "title": "Export Results",
+        "category": "DB Explorer"
       },
       {
         "command": "dbExplorer.clearPassword",
-        "title": "DB Explorer: Clear Stored Password"
+        "title": "Clear Stored Password",
+        "category": "DB Explorer"
       }
     ],
     "menus": {

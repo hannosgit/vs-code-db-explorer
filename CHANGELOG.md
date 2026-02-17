@@ -6,6 +6,7 @@
 
 - Add `Drop Table` context menu command for schema table nodes
 - Add `Truncate Table` context menu command for schema table nodes
+- Use command `category` for `DB Explorer` and shorten command titles
 
 ## 0.0.2
 
