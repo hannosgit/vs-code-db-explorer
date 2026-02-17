@@ -9,7 +9,6 @@ import { ConnectionsTreeDataProvider } from "./views/connectionsTree";
 import { SchemaTreeDataProvider } from "./views/schemaTree";
 import { DataEditorPanel } from "./webviews/dataEditorPanel";
 import { ResultsPanel } from "./webviews/resultsPanel";
-import { showNotImplemented } from "./utils/notifications";
 
 const lastProfileStateKey = "dbExplorer.lastProfileId";
 
@@ -276,9 +275,6 @@ export function activate(context: vscode.ExtensionContext): void {
     vscode.commands.registerCommand("dbExplorer.truncateTable", (item?: unknown) =>
       schemaProvider.truncateTable(item)
     ),
-    vscode.commands.registerCommand("dbExplorer.exportResults", () => {
-      showNotImplemented("Export Results");
-    }),
     vscode.commands.registerCommand("dbExplorer.clearPassword", async () => {
       const profiles = connectionManager.listProfiles();
       if (profiles.length === 0) {

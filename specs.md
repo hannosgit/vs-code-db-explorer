@@ -55,7 +55,6 @@
   - `dbExplorer.refreshSchema`
   - `dbExplorer.runQuery`
   - `dbExplorer.openTable`
-  - `dbExplorer.exportResults`
 - Menus:
   - View title actions (refresh, connect)
   - Tree item context actions (open table, run query in new editor)

@@ -68,11 +68,6 @@
         "category": "DB Explorer"
       },
       {
-        "command": "dbExplorer.exportResults",
-        "title": "Export Results",
-        "category": "DB Explorer"
-      },
-      {
         "command": "dbExplorer.clearPassword",
         "title": "Clear Stored Password",
         "category": "DB Explorer"
