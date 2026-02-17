@@ -2,14 +2,16 @@ import * as assert from "assert";
 import * as vscode from "vscode";
 import { describe, it } from "mocha";
 
+const extensionId = "hannos.db-explorer";
+
 describe("DB Explorer extension", () => {
   it("is registered", () => {
-    const extension = vscode.extensions.getExtension("local.db-explorer");
+    const extension = vscode.extensions.getExtension(extensionId);
     assert.ok(extension, "Extension not found");
   });
 
   it("can activate", async () => {
-    const extension = vscode.extensions.getExtension("local.db-explorer");
+    const extension = vscode.extensions.getExtension(extensionId);
     assert.ok(extension, "Extension not found");
 
     await extension.activate();
@@ -17,7 +19,7 @@ describe("DB Explorer extension", () => {
   });
 
   it("registers core commands", async () => {
-    const extension = vscode.extensions.getExtension("local.db-explorer");
+    const extension = vscode.extensions.getExtension(extensionId);
     assert.ok(extension, "Extension not found");
 
     await extension.activate();
