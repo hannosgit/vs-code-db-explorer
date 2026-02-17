@@ -8,7 +8,7 @@
   },
   "version": "0.0.2",
   "publisher": "hannos",
-  "icon": "resources/image-256.png",
+  "icon": "resources/db.png",
   "engines": {
     "vscode": "^1.85.0"
   },
