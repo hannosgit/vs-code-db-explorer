@@ -3,11 +3,8 @@
 VS Code extension for working with databases.
 Currently only PostgreSQL is supported.
 
-## Development
 
-- Install deps: `npm install`
-- Build: `npm run compile`
-- Watch: `npm run watch`
+
 
 ## Configuration
 
