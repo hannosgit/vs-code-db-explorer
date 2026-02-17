@@ -1,7 +1,7 @@
 import * as assert from "assert";
 import * as vscode from "vscode";
 import { describe, it, afterEach } from "mocha";
-import { getSqlToRun } from "../../query/sqlText";
+import { getAllSqlToRun, getSqlToRun } from "../../query/sqlText";
 
 describe("getSqlToRun", () => {
   let editor: vscode.TextEditor | undefined;
@@ -92,5 +92,19 @@ describe("getSqlToRun", () => {
 
     const sql = getSqlToRun(textEditor);
     assert.strictEqual(sql, "SELECT 2");
+  });
+
+  it("returns the full SQL document when running all statements", async () => {
+    const textEditor = await openEditor("  SELECT 1;\nSELECT 2;  ");
+
+    const sql = getAllSqlToRun(textEditor);
+    assert.strictEqual(sql, "SELECT 1;\nSELECT 2;");
+  });
+
+  it("returns null for run-all on empty documents", async () => {
+    const textEditor = await openEditor("  \n\t");
+
+    const sql = getAllSqlToRun(textEditor);
+    assert.strictEqual(sql, null);
   });
 });

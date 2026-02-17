@@ -4,6 +4,7 @@
 
 ### Enchancements
 
+- Add `Run All Statements` command that runs all the SQL statements of a given `.sql` file
 - Improve README
 
 ## 0.0.1

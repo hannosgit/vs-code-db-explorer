@@ -10,7 +10,7 @@ type FakeQueryResult = {
 
 type FakeClient = {
   processID?: number;
-  query: (sql: string) => Promise<FakeQueryResult>;
+  query: (sql: string) => Promise<FakeQueryResult | FakeQueryResult[]>;
   release: () => void;
 };
 
@@ -20,7 +20,7 @@ type FakePool = {
 };
 
 function createPool(options: {
-  result?: FakeQueryResult;
+  result?: FakeQueryResult | FakeQueryResult[];
   error?: unknown;
   processId?: number;
   onCancel?: (sql: string, params?: unknown[]) => void;
@@ -85,6 +85,32 @@ describe("runCancelableQuery", () => {
 
     assert.deepStrictEqual(result.columns, ["value"]);
     assert.deepStrictEqual(result.rows, [{ value: "ok" }]);
+    assert.strictEqual(result.truncated, false);
+    assert.strictEqual(result.cancelled, false);
+  });
+
+  it("uses the last result for multi-statement queries", async () => {
+    const pool = createPool({
+      result: [
+        {
+          fields: [{ name: "first" }],
+          rows: [{ first: "a" }],
+          rowCount: 1
+        },
+        {
+          fields: [{ name: "second" }],
+          rows: [{ second: "b" }],
+          rowCount: 1
+        }
+      ]
+    });
+
+    const { promise } = runCancelableQuery(pool as unknown as import("pg").Pool, "SELECT 1; SELECT 2;");
+    const result = await promise;
+
+    assert.deepStrictEqual(result.columns, ["second"]);
+    assert.deepStrictEqual(result.rows, [{ second: "b" }]);
+    assert.strictEqual(result.rowCount, 1);
     assert.strictEqual(result.truncated, false);
     assert.strictEqual(result.cancelled, false);
   });

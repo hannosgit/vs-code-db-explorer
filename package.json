@@ -39,6 +39,11 @@
         "title": "DB Explorer: Run Query"
       },
       {
+        "command": "dbExplorer.runAllStatements",
+        "title": "DB Explorer: Run All Statements",
+        "icon": "$(play)"
+      },
+      {
         "command": "dbExplorer.openTable",
         "title": "DB Explorer: Open Table"
       },
@@ -57,12 +62,29 @@
           "command": "dbExplorer.runQuery",
           "when": "resourceLangId == sql",
           "group": "navigation@10"
+        },
+        {
+          "command": "dbExplorer.runAllStatements",
+          "when": "resourceLangId == sql",
+          "group": "navigation@11"
         }
       ],
       "explorer/context": [
         {
           "command": "dbExplorer.runQuery",
           "when": "resourceExtname == .sql",
+          "group": "navigation@10"
+        },
+        {
+          "command": "dbExplorer.runAllStatements",
+          "when": "resourceExtname == .sql",
+          "group": "navigation@11"
+        }
+      ],
+      "editor/title": [
+        {
+          "command": "dbExplorer.runAllStatements",
+          "when": "resourceLangId == sql",
           "group": "navigation@10"
         }
       ],

@@ -31,6 +31,7 @@ describe("DB Explorer extension", () => {
       "dbExplorer.disconnect",
       "dbExplorer.refreshSchema",
       "dbExplorer.runQuery",
+      "dbExplorer.runAllStatements",
       "dbExplorer.openTable",
       "dbExplorer.exportResults",
       "dbExplorer.clearPassword"

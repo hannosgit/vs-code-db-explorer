@@ -48,10 +48,10 @@ export function runCancelableQuery(
     let client: Awaited<typeof clientPromise> | undefined;
     try {
       client = await clientPromise;
-      const result = await client.query(sql);
+      const result = normalizeQueryResult(await client.query(sql));
       const durationMs = Date.now() - start;
       const columns = result.fields.map((field) => field.name);
-      let rows = result.rows as Record<string, unknown>[];
+      let rows = result.rows;
       let truncated = false;
 
       if (rows.length > rowLimit) {
@@ -121,4 +121,32 @@ function normalizeError(error: unknown): QueryErrorInfo {
   }
 
   return { message: "Unknown error" };
+}
+
+type QueryResultLike = {
+  fields?: Array<{ name: string }>;
+  rows?: Record<string, unknown>[];
+  rowCount?: number | null;
+};
+
+function normalizeQueryResult(result: unknown): {
+  fields: Array<{ name: string }>;
+  rows: Record<string, unknown>[];
+  rowCount: number | null;
+} {
+  const lastResult = Array.isArray(result) ? result[result.length - 1] : result;
+  if (!lastResult || typeof lastResult !== "object") {
+    return {
+      fields: [],
+      rows: [],
+      rowCount: null
+    };
+  }
+
+  const maybeResult = lastResult as QueryResultLike;
+  return {
+    fields: Array.isArray(maybeResult.fields) ? maybeResult.fields : [],
+    rows: Array.isArray(maybeResult.rows) ? maybeResult.rows : [],
+    rowCount: typeof maybeResult.rowCount === "number" ? maybeResult.rowCount : null
+  };
 }

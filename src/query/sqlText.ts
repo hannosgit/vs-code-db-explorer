@@ -22,3 +22,8 @@ export function getSqlToRun(editor: vscode.TextEditor): string | null {
 
   return sql.length > 0 ? sql : null;
 }
+
+export function getAllSqlToRun(editor: vscode.TextEditor): string | null {
+  const sql = editor.document.getText().trim();
+  return sql.length > 0 ? sql : null;
+}

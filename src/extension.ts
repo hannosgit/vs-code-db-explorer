@@ -3,7 +3,7 @@ import { ConnectionManager } from "./connections/connectionManager";
 import { promptForNewConnection } from "./connections/createConnectionProfile";
 import { OpenTableService } from "./query/openTableService";
 import { runCancelableQuery } from "./query/queryRunner";
-import { getSqlToRun } from "./query/sqlText";
+import { getAllSqlToRun, getSqlToRun } from "./query/sqlText";
 import { ConnectionsTreeDataProvider } from "./views/connectionsTree";
 import { SchemaTreeDataProvider } from "./views/schemaTree";
 import { DataEditorPanel } from "./webviews/dataEditorPanel";
@@ -34,6 +34,20 @@ export function activate(context: vscode.ExtensionContext): void {
   statusBar.text = "DB Explorer: Disconnected";
   statusBar.show();
   context.subscriptions.push(statusBar);
+
+  const resolveEditor = async (resource?: vscode.Uri): Promise<vscode.TextEditor | undefined> => {
+    let editor = vscode.window.activeTextEditor;
+
+    if (resource) {
+      const activeUri = editor?.document.uri.toString();
+      if (!activeUri || activeUri !== resource.toString()) {
+        const document = await vscode.workspace.openTextDocument(resource);
+        editor = await vscode.window.showTextDocument(document, { preview: false });
+      }
+    }
+
+    return editor;
+  };
 
   connectionManager.onDidChangeActive((state) => {
     if (state.activeProfileId) {
@@ -130,15 +144,7 @@ export function activate(context: vscode.ExtensionContext): void {
       schemaProvider.refresh();
     }),
     vscode.commands.registerCommand("dbExplorer.runQuery", async (resource?: vscode.Uri) => {
-      let editor = vscode.window.activeTextEditor;
-
-      if (resource) {
-        const activeUri = editor?.document.uri.toString();
-        if (!activeUri || activeUri !== resource.toString()) {
-          const document = await vscode.workspace.openTextDocument(resource);
-          editor = await vscode.window.showTextDocument(document, { preview: false });
-        }
-      }
+      const editor = await resolveEditor(resource);
 
       if (!editor) {
         void vscode.window.showWarningMessage("Open a SQL file to run a query.");
@@ -148,6 +154,43 @@ export function activate(context: vscode.ExtensionContext): void {
       const sql = getSqlToRun(editor);
       if (!sql) {
         void vscode.window.showWarningMessage("No SQL statement selected or found.");
+        return;
+      }
+
+      const pool = connectionManager.getPool();
+      if (!pool) {
+        void vscode.window.showWarningMessage("Connect to a DB profile first.");
+        return;
+      }
+
+      const viewColumn = DataEditorPanel.getViewColumn();
+      DataEditorPanel.disposeCurrentPanel();
+      const panel = ResultsPanel.createOrShow(context.extensionUri, viewColumn);
+      panel.showLoading(sql);
+      panel.setCancelHandler(undefined);
+
+      const { promise, cancel } = runCancelableQuery(pool, sql);
+      panel.setCancelHandler(cancel);
+
+      const result = await promise;
+      panel.setCancelHandler(undefined);
+      panel.showResults(result);
+
+      if (result.error && !result.cancelled) {
+        void vscode.window.showErrorMessage(result.error.message);
+      }
+    }),
+    vscode.commands.registerCommand("dbExplorer.runAllStatements", async (resource?: vscode.Uri) => {
+      const editor = await resolveEditor(resource);
+
+      if (!editor || editor.document.languageId !== "sql") {
+        void vscode.window.showWarningMessage("Open a SQL file to run statements.");
+        return;
+      }
+
+      const sql = getAllSqlToRun(editor);
+      if (!sql) {
+        void vscode.window.showWarningMessage("No SQL statements found in the file.");
         return;
       }
 
