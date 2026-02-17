@@ -1,7 +1,7 @@
 import * as assert from "assert";
 import * as vscode from "vscode";
 import { describe, it, afterEach } from "mocha";
-import { getAllSqlToRun, getSqlToRun } from "../../query/sqlText";
+import { getAllSqlToRun, getSqlFromRange, getSqlStatements, getSqlToRun } from "../../query/sqlText";
 
 describe("getSqlToRun", () => {
   let editor: vscode.TextEditor | undefined;
@@ -106,5 +106,38 @@ describe("getSqlToRun", () => {
 
     const sql = getAllSqlToRun(textEditor);
     assert.strictEqual(sql, null);
+  });
+
+  it("returns SQL from an explicit range", async () => {
+    const textEditor = await openEditor("SELECT 1;\nSELECT 2;");
+    const range = new vscode.Range(new vscode.Position(1, 0), new vscode.Position(1, 8));
+
+    const sql = getSqlFromRange(textEditor.document, range);
+    assert.strictEqual(sql, "SELECT 2");
+  });
+
+  it("returns statements for CodeLens without comment-only chunks", async () => {
+    const textEditor = await openEditor("-- heading comment\nSELECT 1;\n/* split */\nSELECT 2;\n-- trailing");
+    const statements = getSqlStatements(textEditor.document);
+
+    assert.strictEqual(statements.length, 2);
+    assert.strictEqual(statements[0].text, "SELECT 1");
+    assert.strictEqual(statements[1].text, "SELECT 2");
+  });
+
+  it("ignores semicolons inside strings, comments, and dollar quotes", async () => {
+    const textEditor = await openEditor(
+      "SELECT ';' AS x;\n" +
+        "SELECT 1 /* ; */;\n" +
+        "DO $$\nBEGIN\n  RAISE NOTICE ';';\nEND\n$$;\n" +
+        "SELECT 3;"
+    );
+
+    const statements = getSqlStatements(textEditor.document);
+    assert.strictEqual(statements.length, 4);
+    assert.strictEqual(statements[0].text, "SELECT ';' AS x");
+    assert.strictEqual(statements[1].text, "SELECT 1 /* ; */");
+    assert.ok(statements[2].text.startsWith("DO $$"));
+    assert.strictEqual(statements[3].text, "SELECT 3");
   });
 });

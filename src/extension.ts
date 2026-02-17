@@ -3,7 +3,8 @@ import { ConnectionManager } from "./connections/connectionManager";
 import { promptForNewConnection } from "./connections/createConnectionProfile";
 import { OpenTableService } from "./query/openTableService";
 import { runCancelableQuery } from "./query/queryRunner";
-import { getAllSqlToRun, getSqlToRun } from "./query/sqlText";
+import { SqlCodeLensProvider } from "./query/sqlCodeLensProvider";
+import { getAllSqlToRun, getSqlFromRange, getSqlToRun } from "./query/sqlText";
 import { ConnectionsTreeDataProvider } from "./views/connectionsTree";
 import { SchemaTreeDataProvider } from "./views/schemaTree";
 import { DataEditorPanel } from "./webviews/dataEditorPanel";
@@ -18,6 +19,48 @@ function getProfilesTarget(): vscode.ConfigurationTarget {
     : vscode.ConfigurationTarget.Global;
 }
 
+function toRange(value: unknown): vscode.Range | undefined {
+  if (value instanceof vscode.Range) {
+    return value;
+  }
+
+  if (!value || typeof value !== "object") {
+    return undefined;
+  }
+
+  const candidate = value as {
+    start?: unknown;
+    end?: unknown;
+  };
+
+  if (!isPosition(candidate.start) || !isPosition(candidate.end)) {
+    return undefined;
+  }
+
+  return new vscode.Range(
+    new vscode.Position(candidate.start.line, candidate.start.character),
+    new vscode.Position(candidate.end.line, candidate.end.character)
+  );
+}
+
+function isPosition(
+  value: unknown
+): value is { line: number; character: number } {
+  if (!value || typeof value !== "object") {
+    return false;
+  }
+
+  const candidate = value as { line?: unknown; character?: unknown };
+  return (
+    typeof candidate.line === "number" &&
+    Number.isInteger(candidate.line) &&
+    candidate.line >= 0 &&
+    typeof candidate.character === "number" &&
+    Number.isInteger(candidate.character) &&
+    candidate.character >= 0
+  );
+}
+
 export function activate(context: vscode.ExtensionContext): void {
   const connectionManager = new ConnectionManager(context.secrets);
   const connectionsProvider = new ConnectionsTreeDataProvider(connectionManager);
@@ -26,7 +69,8 @@ export function activate(context: vscode.ExtensionContext): void {
 
   context.subscriptions.push(
     vscode.window.registerTreeDataProvider("dbConnections", connectionsProvider),
-    vscode.window.registerTreeDataProvider("dbSchema", schemaProvider)
+    vscode.window.registerTreeDataProvider("dbSchema", schemaProvider),
+    vscode.languages.registerCodeLensProvider({ language: "sql" }, new SqlCodeLensProvider())
   );
 
   const statusBar = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Left, 100);
@@ -143,43 +187,49 @@ export function activate(context: vscode.ExtensionContext): void {
     vscode.commands.registerCommand("dbExplorer.refreshSchema", () => {
       schemaProvider.refresh();
     }),
-    vscode.commands.registerCommand("dbExplorer.runQuery", async (resource?: vscode.Uri) => {
-      const editor = await resolveEditor(resource);
+    vscode.commands.registerCommand(
+      "dbExplorer.runQuery",
+      async (resource?: vscode.Uri, statementRange?: unknown) => {
+        const editor = await resolveEditor(resource);
 
-      if (!editor) {
-        void vscode.window.showWarningMessage("Open a SQL file to run a query.");
-        return;
+        if (!editor) {
+          void vscode.window.showWarningMessage("Open a SQL file to run a query.");
+          return;
+        }
+
+        const range = toRange(statementRange);
+        const sql = range
+          ? getSqlFromRange(editor.document, range)
+          : getSqlToRun(editor);
+        if (!sql) {
+          void vscode.window.showWarningMessage("No SQL statement selected or found.");
+          return;
+        }
+
+        const pool = connectionManager.getPool();
+        if (!pool) {
+          void vscode.window.showWarningMessage("Connect to a DB profile first.");
+          return;
+        }
+
+        const viewColumn = DataEditorPanel.getViewColumn();
+        DataEditorPanel.disposeCurrentPanel();
+        const panel = ResultsPanel.createOrShow(context.extensionUri, viewColumn);
+        panel.showLoading(sql);
+        panel.setCancelHandler(undefined);
+
+        const { promise, cancel } = runCancelableQuery(pool, sql);
+        panel.setCancelHandler(cancel);
+
+        const result = await promise;
+        panel.setCancelHandler(undefined);
+        panel.showResults(result);
+
+        if (result.error && !result.cancelled) {
+          void vscode.window.showErrorMessage(result.error.message);
+        }
       }
-
-      const sql = getSqlToRun(editor);
-      if (!sql) {
-        void vscode.window.showWarningMessage("No SQL statement selected or found.");
-        return;
-      }
-
-      const pool = connectionManager.getPool();
-      if (!pool) {
-        void vscode.window.showWarningMessage("Connect to a DB profile first.");
-        return;
-      }
-
-      const viewColumn = DataEditorPanel.getViewColumn();
-      DataEditorPanel.disposeCurrentPanel();
-      const panel = ResultsPanel.createOrShow(context.extensionUri, viewColumn);
-      panel.showLoading(sql);
-      panel.setCancelHandler(undefined);
-
-      const { promise, cancel } = runCancelableQuery(pool, sql);
-      panel.setCancelHandler(cancel);
-
-      const result = await promise;
-      panel.setCancelHandler(undefined);
-      panel.showResults(result);
-
-      if (result.error && !result.cancelled) {
-        void vscode.window.showErrorMessage(result.error.message);
-      }
-    }),
+    ),
     vscode.commands.registerCommand("dbExplorer.runAllStatements", async (resource?: vscode.Uri) => {
       const editor = await resolveEditor(resource);
 
