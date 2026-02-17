@@ -75,6 +75,11 @@ interface ColumnRow {
   is_nullable: string;
 }
 
+interface TableContext {
+  schemaName: string;
+  tableName: string;
+}
+
 export class SchemaTreeDataProvider implements vscode.TreeDataProvider<SchemaNode> {
   private readonly onDidChangeTreeDataEmitter = new vscode.EventEmitter<SchemaNode | undefined>();
   readonly onDidChangeTreeData = this.onDidChangeTreeDataEmitter.event;
@@ -85,6 +90,44 @@ export class SchemaTreeDataProvider implements vscode.TreeDataProvider<SchemaNod
 
   refresh(): void {
     this.onDidChangeTreeDataEmitter.fire(undefined);
+  }
+
+  async dropTable(item?: unknown): Promise<void> {
+    const table = this.toTableContext(item);
+    if (!table) {
+      void vscode.window.showWarningMessage("Select a table in the DB Schema view.");
+      return;
+    }
+
+    const pool = this.connectionManager.getPool();
+    if (!pool) {
+      void vscode.window.showWarningMessage("Connect to a DB profile first.");
+      return;
+    }
+
+    const displayName = `${table.schemaName}.${table.tableName}`;
+    const action = await vscode.window.showWarningMessage(
+      `Drop table ${displayName}?`,
+      { modal: true, detail: "This action cannot be undone." },
+      "Drop Table"
+    );
+
+    if (action !== "Drop Table") {
+      return;
+    }
+
+    const qualifiedName = `${this.quoteIdentifier(table.schemaName)}.${this.quoteIdentifier(
+      table.tableName
+    )}`;
+
+    try {
+      await pool.query(`DROP TABLE ${qualifiedName}`);
+      this.refresh();
+      void vscode.window.showInformationMessage(`Dropped table ${displayName}.`);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Unknown error";
+      void vscode.window.showErrorMessage(`Failed to drop table ${displayName}: ${message}`);
+    }
   }
 
   getTreeItem(element: SchemaNode): vscode.TreeItem {
@@ -188,5 +231,32 @@ export class SchemaTreeDataProvider implements vscode.TreeDataProvider<SchemaNod
       return new SchemaErrorItem(label, error.message);
     }
     return new SchemaErrorItem(label, "Unknown error");
+  }
+
+  private toTableContext(value: unknown): TableContext | undefined {
+    if (value instanceof TableItem) {
+      return {
+        schemaName: value.schemaName,
+        tableName: value.tableName
+      };
+    }
+
+    if (!value || typeof value !== "object") {
+      return undefined;
+    }
+
+    const maybe = value as { schemaName?: unknown; tableName?: unknown };
+    if (typeof maybe.schemaName !== "string" || typeof maybe.tableName !== "string") {
+      return undefined;
+    }
+
+    return {
+      schemaName: maybe.schemaName,
+      tableName: maybe.tableName
+    };
+  }
+
+  private quoteIdentifier(value: string): string {
+    return `"${value.replace(/"/g, "\"\"")}"`;
   }
 }

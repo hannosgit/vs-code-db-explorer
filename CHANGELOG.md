@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.0.3
+
+### Enchancements
+
+- Add `Drop Table` command in Schema Tree
+
 ## 0.0.2
 
 ### Enchancements

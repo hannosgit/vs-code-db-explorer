@@ -270,6 +270,9 @@ export function activate(context: vscode.ExtensionContext): void {
     vscode.commands.registerCommand("dbExplorer.openTable", (item?: unknown) =>
       openTableService.open(item)
     ),
+    vscode.commands.registerCommand("dbExplorer.dropTable", (item?: unknown) =>
+      schemaProvider.dropTable(item)
+    ),
     vscode.commands.registerCommand("dbExplorer.exportResults", () => {
       showNotImplemented("Export Results");
     }),

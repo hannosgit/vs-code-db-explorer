@@ -51,6 +51,10 @@
         "title": "DB Explorer: Open Table"
       },
       {
+        "command": "dbExplorer.dropTable",
+        "title": "DB Explorer: Drop Table"
+      },
+      {
         "command": "dbExplorer.exportResults",
         "title": "DB Explorer: Export Results"
       },
@@ -101,6 +105,11 @@
           "command": "dbExplorer.openTable",
           "when": "view == dbSchema && viewItem == dbTable",
           "group": "navigation@10"
+        },
+        {
+          "command": "dbExplorer.dropTable",
+          "when": "view == dbSchema && viewItem == dbTable",
+          "group": "navigation@20"
         }
       ],
       "view/title": [
