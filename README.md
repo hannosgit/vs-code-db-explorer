@@ -3,6 +3,12 @@
 VS Code extension for working with databases.
 Currently only PostgreSQL is supported.
 
+## Screenshots
+
+| Activity Bar | Data Editor |
+| --- | --- |
+| ![DB Explorer Activity Bar](resources/readme/activity_bar.png) | ![DB Explorer Data Editor](resources/readme/dataeditor.png) |
+
 
 
 
