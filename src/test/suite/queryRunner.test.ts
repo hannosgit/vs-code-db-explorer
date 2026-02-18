@@ -150,6 +150,31 @@ describe("runCancelableQuery", () => {
     assert.strictEqual(result.error?.message, "Query cancelled.");
   });
 
+  it("treats client-requested cancellation as cancelled on later failure", async () => {
+    let rejectQuery: (reason?: unknown) => void;
+    const queryPromise = new Promise<FakeQueryResult>((_resolve, reject) => {
+      rejectQuery = reject;
+    });
+
+    const pool: FakePool = {
+      connect: async () => ({
+        processID: 789,
+        query: async () => queryPromise,
+        release: () => {}
+      }),
+      query: async () => ({})
+    };
+
+    const { promise, cancel } = runCancelableQuery(pool as unknown as import("pg").Pool, "SELECT *");
+    const cancelled = await cancel();
+    rejectQuery!(new Error("query failed after cancellation"));
+    const result = await promise;
+
+    assert.strictEqual(cancelled, true);
+    assert.strictEqual(result.cancelled, true);
+    assert.strictEqual(result.error?.message, "Query cancelled.");
+  });
+
   it("sends cancellation to the pool when requested", async () => {
     let cancelSql: string | undefined;
     let cancelParams: unknown[] | undefined;
@@ -241,5 +266,26 @@ describe("runCancelableQuery", () => {
     assert.strictEqual(result.cancelled, false);
     assert.strictEqual(result.error?.message, "Unknown error");
     assert.strictEqual(result.error?.code, undefined);
+  });
+
+  it("always releases the client when queries fail", async () => {
+    let releaseCount = 0;
+    const pool: FakePool = {
+      connect: async () => ({
+        processID: 100,
+        query: async () => {
+          throw new Error("boom");
+        },
+        release: () => {
+          releaseCount += 1;
+        }
+      }),
+      query: async () => ({})
+    };
+
+    const { promise } = runCancelableQuery(pool as unknown as import("pg").Pool, "SELECT *");
+    await promise;
+
+    assert.strictEqual(releaseCount, 1);
   });
 });

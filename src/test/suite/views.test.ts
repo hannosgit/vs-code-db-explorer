@@ -151,6 +151,38 @@ describe("SchemaTreeDataProvider", () => {
     return new SchemaTreeDataProvider(manager);
   }
 
+  function patchWindowMessages(stubs: {
+    showWarningMessage?: (...args: unknown[]) => Thenable<string | undefined>;
+    showInformationMessage?: (...args: unknown[]) => Thenable<string | undefined>;
+    showErrorMessage?: (...args: unknown[]) => Thenable<string | undefined>;
+  }): () => void {
+    const windowApi = vscode.window as unknown as {
+      showWarningMessage: (...args: unknown[]) => Thenable<string | undefined>;
+      showInformationMessage: (...args: unknown[]) => Thenable<string | undefined>;
+      showErrorMessage: (...args: unknown[]) => Thenable<string | undefined>;
+    };
+
+    const originalWarning = windowApi.showWarningMessage;
+    const originalInfo = windowApi.showInformationMessage;
+    const originalError = windowApi.showErrorMessage;
+
+    if (stubs.showWarningMessage) {
+      windowApi.showWarningMessage = stubs.showWarningMessage;
+    }
+    if (stubs.showInformationMessage) {
+      windowApi.showInformationMessage = stubs.showInformationMessage;
+    }
+    if (stubs.showErrorMessage) {
+      windowApi.showErrorMessage = stubs.showErrorMessage;
+    }
+
+    return () => {
+      windowApi.showWarningMessage = originalWarning;
+      windowApi.showInformationMessage = originalInfo;
+      windowApi.showErrorMessage = originalError;
+    };
+  }
+
   it("shows placeholders when no active connection exists", async () => {
     const manager = new ConnectionManager(secrets);
     const provider = new SchemaTreeDataProvider(manager);
@@ -386,5 +418,83 @@ describe("SchemaTreeDataProvider", () => {
     }
     assert.strictEqual(readLabel(columns[0]), "Failed to load columns for users");
     assert.strictEqual(columns[0].description, "Unknown error");
+  });
+
+  it("drops confirmed tables using quoted identifiers", async () => {
+    let executedSql = "";
+    let infoMessage = "";
+    const provider = createProviderWithPool({
+      query: async (sql: string) => {
+        executedSql = sql;
+        return { rows: [] };
+      }
+    });
+
+    let refreshCount = 0;
+    (provider as unknown as { refresh: () => void }).refresh = () => {
+      refreshCount += 1;
+    };
+
+    const restore = patchWindowMessages({
+      showWarningMessage: async (message: unknown) => {
+        if (typeof message === "string" && message.startsWith("Drop table ")) {
+          return "Drop Table";
+        }
+        return undefined;
+      },
+      showInformationMessage: async (message: unknown) => {
+        infoMessage = String(message);
+        return undefined;
+      }
+    });
+
+    try {
+      await provider.dropTable({ schemaName: 'pub"lic', tableName: 'user"name' });
+    } finally {
+      restore();
+    }
+
+    assert.strictEqual(executedSql, 'DROP TABLE "pub""lic"."user""name"');
+    assert.strictEqual(infoMessage, 'Dropped table pub"lic.user"name.');
+    assert.strictEqual(refreshCount, 1);
+  });
+
+  it("truncates confirmed tables using quoted identifiers", async () => {
+    let executedSql = "";
+    let infoMessage = "";
+    const provider = createProviderWithPool({
+      query: async (sql: string) => {
+        executedSql = sql;
+        return { rows: [] };
+      }
+    });
+
+    let refreshCount = 0;
+    (provider as unknown as { refresh: () => void }).refresh = () => {
+      refreshCount += 1;
+    };
+
+    const restore = patchWindowMessages({
+      showWarningMessage: async (message: unknown) => {
+        if (typeof message === "string" && message.startsWith("Truncate table ")) {
+          return "Truncate Table";
+        }
+        return undefined;
+      },
+      showInformationMessage: async (message: unknown) => {
+        infoMessage = String(message);
+        return undefined;
+      }
+    });
+
+    try {
+      await provider.truncateTable({ schemaName: 'pub"lic', tableName: 'user"name' });
+    } finally {
+      restore();
+    }
+
+    assert.strictEqual(executedSql, 'TRUNCATE TABLE "pub""lic"."user""name"');
+    assert.strictEqual(infoMessage, 'Truncated table pub"lic.user"name.');
+    assert.strictEqual(refreshCount, 1);
   });
 });

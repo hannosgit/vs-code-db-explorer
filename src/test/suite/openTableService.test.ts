@@ -3,9 +3,13 @@ import * as vscode from "vscode";
 import { describe, it } from "mocha";
 import { ConnectionManager } from "../../connections/connectionManager";
 import { OpenTableService } from "../../query/openTableService";
+import { DataEditorPanel, DataEditorState } from "../../webviews/dataEditorPanel";
+import { ResultsPanel } from "../../webviews/resultsPanel";
 
 type FakeQueryResult = {
+  fields?: Array<{ name: string }>;
   rows: Record<string, unknown>[];
+  rowCount?: number | null;
 };
 
 type FakePool = {
@@ -17,6 +21,59 @@ function createService(getPool: () => FakePool | undefined = () => undefined): O
     getPool
   } as unknown as ConnectionManager;
   return new OpenTableService(manager, vscode.Uri.parse("test:/db-explorer"));
+}
+
+function patchWindowMessages(stubs: {
+  showWarningMessage?: (...args: unknown[]) => Thenable<string | undefined>;
+}): () => void {
+  const windowApi = vscode.window as unknown as {
+    showWarningMessage: (...args: unknown[]) => Thenable<string | undefined>;
+  };
+  const originalWarning = windowApi.showWarningMessage;
+
+  if (stubs.showWarningMessage) {
+    windowApi.showWarningMessage = stubs.showWarningMessage;
+  }
+
+  return () => {
+    windowApi.showWarningMessage = originalWarning;
+  };
+}
+
+function patchDataEditorPanel(states: DataEditorState[]): () => void {
+  const dataEditorPanelClass = DataEditorPanel as unknown as {
+    createOrShow: (extensionUri: vscode.Uri, viewColumn?: vscode.ViewColumn) => {
+      setSaveHandler: (handler?: (changes: unknown[]) => void | Promise<void>) => void;
+      setRefreshHandler: (handler?: () => void | Promise<void>) => void;
+      setPageHandler: (handler?: (direction: "previous" | "next") => void | Promise<void>) => void;
+      showState: (state: DataEditorState) => void;
+    };
+  };
+  const resultsPanelClass = ResultsPanel as unknown as {
+    getViewColumn: () => vscode.ViewColumn | undefined;
+    disposeCurrentPanel: () => void;
+  };
+
+  const originalCreateOrShow = dataEditorPanelClass.createOrShow;
+  const originalGetViewColumn = resultsPanelClass.getViewColumn;
+  const originalDisposeCurrentPanel = resultsPanelClass.disposeCurrentPanel;
+
+  dataEditorPanelClass.createOrShow = () => ({
+    setSaveHandler: () => {},
+    setRefreshHandler: () => {},
+    setPageHandler: () => {},
+    showState: (state: DataEditorState) => {
+      states.push(state);
+    }
+  });
+  resultsPanelClass.getViewColumn = () => undefined;
+  resultsPanelClass.disposeCurrentPanel = () => {};
+
+  return () => {
+    dataEditorPanelClass.createOrShow = originalCreateOrShow;
+    resultsPanelClass.getViewColumn = originalGetViewColumn;
+    resultsPanelClass.disposeCurrentPanel = originalDisposeCurrentPanel;
+  };
 }
 
 describe("OpenTableService helpers", () => {
@@ -303,5 +360,80 @@ describe("OpenTableService helpers", () => {
       ["id", "status"]
     );
     assert.deepStrictEqual(failingValues, [[], []]);
+  });
+});
+
+describe("OpenTableService open contract", () => {
+  it("warns when opening a table without an active connection", async () => {
+    let warningMessage = "";
+    const restoreWindow = patchWindowMessages({
+      showWarningMessage: async (message: unknown) => {
+        warningMessage = String(message);
+        return undefined;
+      }
+    });
+
+    try {
+      const service = createService(() => undefined);
+      await service.open({ schemaName: "public", tableName: "users" });
+    } finally {
+      restoreWindow();
+    }
+
+    assert.strictEqual(warningMessage, "Connect to a DB profile first.");
+  });
+
+  it("shows loading state before rendering loaded rows", async () => {
+    const states: DataEditorState[] = [];
+    const issuedQueries: Array<{ sql: string; params?: unknown[] }> = [];
+    const restorePanel = patchDataEditorPanel(states);
+
+    const pool: FakePool = {
+      query: async (sql: string, params?: unknown[]) => {
+        issuedQueries.push({ sql, params });
+        if (sql.startsWith("SELECT ctid::text AS")) {
+          return {
+            fields: [
+              { name: "__postgres_explorer_row_token__" },
+              { name: "id" },
+              { name: "name" }
+            ],
+            rows: [{ __postgres_explorer_row_token__: "(0,1)", id: 1, name: "Ada" }]
+          };
+        }
+
+        if (sql.includes("format_type")) {
+          return {
+            rows: [
+              { column_name: "id", column_type: "integer" },
+              { column_name: "name", column_type: "text" }
+            ]
+          };
+        }
+
+        if (sql.includes("enumlabel")) {
+          return { rows: [] };
+        }
+
+        throw new Error(`Unexpected SQL: ${sql}`);
+      }
+    };
+
+    try {
+      const service = createService(() => pool);
+      await service.open({ schemaName: "public", tableName: "users" });
+    } finally {
+      restorePanel();
+    }
+
+    assert.strictEqual(states.length, 2);
+    assert.strictEqual(states[0].loading, true);
+    assert.deepStrictEqual(states[1].columns, ["id", "name"]);
+    assert.deepStrictEqual(states[1].columnTypes, ["integer", "text"]);
+    assert.deepStrictEqual(states[1].columnEnumValues, [[], []]);
+    assert.deepStrictEqual(states[1].rows, [{ values: ["1", "Ada"], nulls: [false, false] }]);
+    assert.strictEqual(states[1].hasNextPage, false);
+    assert.ok(issuedQueries[0].sql.includes('FROM "public"."users"'));
+    assert.ok(issuedQueries[0].sql.includes("LIMIT 101 OFFSET 0"));
   });
 });
