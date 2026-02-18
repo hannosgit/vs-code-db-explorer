@@ -6,9 +6,11 @@ Use the notes below to contribute changes consistently.
 ## Project Structure & Module Organization
 - `src/` contains the TypeScript source. Entry point: `src/extension.ts`.
 - `src/connections/` manages profiles and connection lifecycle.
+- `src/databases/` contains database engine adapters, contracts, and PostgreSQL implementations.
 - `src/query/` handles SQL selection and execution helpers.
 - `src/views/` provides tree view data providers for the sidebar.
 - `src/webviews/` renders results UI and related messaging.
+- `src/test/` contains the VS Code extension test harness and test suites.
 - `src/utils/` holds shared helpers (notifications, etc.).
 - `dist/` is generated output from the TypeScript build.
 - `specs.md` documents product goals, architecture, and roadmap.
@@ -16,6 +18,8 @@ Use the notes below to contribute changes consistently.
 ## Build, Test, and Development Commands
 - `npm install` installs dependencies.
 - `npm run compile` builds TypeScript into `dist/` using `tsc`.
+- `npm test` compiles and runs the extension test suite.
+- `npm run coverage` compiles and runs tests with `c8` coverage reporting.
 - `npm run watch` runs `tsc -watch` for iterative development.
 - `npm run package` creates a VSIX via `vsce package` (requires `vsce`).
 
@@ -25,9 +29,10 @@ Use the notes below to contribute changes consistently.
 - File names use lower camelCase (e.g., `connectionManager.ts`), classes use PascalCase.
 
 ## Testing Guidelines
-- No automated tests are wired yet. Planned test areas are listed in `specs.md`.
-- If you add tests, introduce a test runner and add a script in `package.json`.
-- Prefer `*.test.ts` or `*.spec.ts` naming and document where tests live.
+- Automated tests are wired via the VS Code test harness and run through `npm test`.
+- Unit and extension tests live under `src/test/suite/`.
+- PostgreSQL integration tests live under `src/test/suite/postgres/` and require a reachable Postgres instance.
+- Prefer `*.test.ts` naming for new tests.
 
 ## Commit & Pull Request Guidelines
 - Commit history uses short, descriptive messages (sentence case or simple imperatives).
