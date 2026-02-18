@@ -30,10 +30,19 @@ interface DataEditorInsertChange {
   values: DataEditorCellUpdate[];
 }
 
-type DataEditorChange = DataEditorUpdateChange | DataEditorInsertChange;
+interface DataEditorDeleteChange {
+  kind: "delete";
+  rowIndex: number;
+}
+
+type DataEditorChange =
+  | DataEditorUpdateChange
+  | DataEditorInsertChange
+  | DataEditorDeleteChange;
 
 interface WorkingEditorRow extends EditorRow {
   isNew: boolean;
+  isDeleted: boolean;
 }
 
 function readState(documentObject: any): DataEditorState | undefined {
@@ -85,7 +94,8 @@ function readState(documentObject: any): DataEditorState | undefined {
   let workingRows: WorkingEditorRow[] = originalRows.map((row: EditorRow) => ({
     values: [...row.values],
     nulls: [...row.nulls],
-    isNew: false
+    isNew: false,
+    isDeleted: false
   }));
 
   if (refreshButton) {
@@ -123,7 +133,8 @@ function readState(documentObject: any): DataEditorState | undefined {
     return {
       values: state.columns.map(() => ""),
       nulls: state.columns.map(() => false),
-      isNew: true
+      isNew: true,
+      isDeleted: false
     };
   }
 
@@ -136,6 +147,9 @@ function readState(documentObject: any): DataEditorState | undefined {
   function isCellDirty(rowIndex: number, columnIndex: number): boolean {
     const row = workingRows[rowIndex];
     if (!row) {
+      return false;
+    }
+    if (row.isDeleted) {
       return false;
     }
 
@@ -157,11 +171,13 @@ function readState(documentObject: any): DataEditorState | undefined {
 
   function updateDirtyState(): void {
     const dirtyCount = cellControls.filter((control: any) => control.classList.contains("dirty")).length;
+    const deletedCount = workingRows.filter((row: WorkingEditorRow) => row.isDeleted && !row.isNew).length;
+    const hasChanges = dirtyCount > 0 || deletedCount > 0;
     if (saveButton) {
-      saveButton.disabled = dirtyCount === 0;
+      saveButton.disabled = !hasChanges;
     }
     if (revertButton) {
-      revertButton.disabled = dirtyCount === 0;
+      revertButton.disabled = !hasChanges;
     }
   }
 
@@ -202,11 +218,50 @@ function readState(documentObject: any): DataEditorState | undefined {
       if (row.isNew) {
         tr.classList.add("new-row");
       }
+      if (row.isDeleted) {
+        tr.classList.add("deleted-row");
+      }
 
       const rowNumberCell = documentObject.createElement("td");
       rowNumberCell.classList.add("row-number");
       rowNumberCell.textContent = String(rowNumberOffset + rowIndex + 1);
       tr.appendChild(rowNumberCell);
+
+      const actionCell = documentObject.createElement("td");
+      actionCell.classList.add("row-actions");
+      const actionButton = documentObject.createElement("button");
+      actionButton.classList.add("secondary");
+      actionButton.type = "button";
+      if (row.isNew) {
+        actionButton.textContent = "Remove";
+        actionButton.addEventListener("click", () => {
+          workingRows.splice(rowIndex, 1);
+          renderTable();
+        });
+      } else if (row.isDeleted) {
+        actionButton.textContent = "Undo";
+        actionButton.addEventListener("click", () => {
+          row.isDeleted = false;
+          renderTable();
+        });
+      } else {
+        actionButton.textContent = "Delete";
+        actionButton.addEventListener("click", () => {
+          const hasUnsavedEdits = state.columns.some((_: string, columnIndex: number) =>
+            isCellDirty(rowIndex, columnIndex)
+          );
+          if (
+            hasUnsavedEdits &&
+            !globalObject.confirm("Delete this row and discard its unsaved edits?")
+          ) {
+            return;
+          }
+          row.isDeleted = true;
+          renderTable();
+        });
+      }
+      actionCell.appendChild(actionButton);
+      tr.appendChild(actionCell);
 
       state.columns.forEach((_: string, columnIndex: number) => {
         const td = documentObject.createElement("td");
@@ -242,6 +297,7 @@ function readState(documentObject: any): DataEditorState | undefined {
           select.dataset.column = String(columnIndex);
           select.classList.toggle("dirty", isCellDirty(rowIndex, columnIndex));
           select.classList.toggle("is-null", isNull);
+          select.disabled = row.isDeleted;
 
           select.addEventListener("change", () => {
             const nextValue = select.value;
@@ -268,6 +324,7 @@ function readState(documentObject: any): DataEditorState | undefined {
         input.classList.toggle("dirty", isCellDirty(rowIndex, columnIndex));
         input.classList.toggle("is-null", isNull);
         input.placeholder = isNull ? "null" : "";
+        input.disabled = row.isDeleted;
 
         input.addEventListener("input", () => {
           const baselineNull = row.isNew
@@ -303,6 +360,13 @@ function readState(documentObject: any): DataEditorState | undefined {
     const changes: DataEditorChange[] = [];
 
     workingRows.forEach((row: WorkingEditorRow, rowIndex: number) => {
+      if (row.isDeleted) {
+        if (!row.isNew) {
+          changes.push({ kind: "delete", rowIndex });
+        }
+        return;
+      }
+
       if (row.isNew) {
         const values: DataEditorCellUpdate[] = [];
         state.columns.forEach((_: string, columnIndex: number) => {
@@ -358,7 +422,8 @@ function readState(documentObject: any): DataEditorState | undefined {
     workingRows = originalRows.map((row: EditorRow) => ({
       values: [...row.values],
       nulls: [...row.nulls],
-      isNew: false
+      isNew: false,
+      isDeleted: false
     }));
   }
 

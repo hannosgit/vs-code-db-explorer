@@ -3,6 +3,7 @@ import { ConnectionManager } from "../connections/connectionManager";
 import {
   TableDataProvider,
   TableDataChange,
+  TableDeleteChange,
   TableInsertChange,
   TableReference,
   TableUpdateChange
@@ -14,6 +15,7 @@ import {
 import { PostgresTableDataProvider } from "../databases/postgres/postgresTableDataProvider";
 import {
   DataEditorChange,
+  DataEditorDeleteChange,
   DataEditorInsertChange,
   DataEditorPanel,
   DataEditorState,
@@ -224,7 +226,7 @@ export class OpenTableService {
 
     try {
       const mappedChanges = this.toTableDataChanges(changes);
-      const { updatedRows, insertedRows } = await tableDataProvider.saveChanges({
+      const { updatedRows, insertedRows, deletedRows } = await tableDataProvider.saveChanges({
         table,
         columns: state.columns,
         changes: mappedChanges
@@ -236,6 +238,9 @@ export class OpenTableService {
       }
       if (insertedRows > 0) {
         summaryParts.push(`${insertedRows} inserted`);
+      }
+      if (deletedRows > 0) {
+        summaryParts.push(`${deletedRows} deleted`);
       }
       const summary = summaryParts.length > 0 ? summaryParts.join(", ") : "no rows affected";
       void vscode.window.showInformationMessage(
@@ -267,6 +272,15 @@ export class OpenTableService {
 
       const rowToken = this.activeRowTokens[change.rowIndex];
       if (!rowToken) {
+        continue;
+      }
+
+      if (change.kind === "delete") {
+        const deleteChange: TableDeleteChange = {
+          kind: "delete",
+          rowLocator: rowToken
+        };
+        mapped.push(deleteChange);
         continue;
       }
 
@@ -345,6 +359,19 @@ export class OpenTableService {
     };
 
     return PostgresTableDataProvider.buildInsertStatement(table, columns, insertChange);
+  }
+
+  private buildDeleteStatement(
+    table: TableContext,
+    change: DataEditorDeleteChange,
+    rowToken: string
+  ): { sql: string; values: unknown[] } | undefined {
+    const deleteChange: TableDeleteChange = {
+      kind: "delete",
+      rowLocator: rowToken
+    };
+
+    return PostgresTableDataProvider.buildDeleteStatement(table, deleteChange);
   }
 
   private toEditorRow(row: Record<string, unknown>, columns: string[]): EditorRow {

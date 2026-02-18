@@ -43,7 +43,12 @@ export interface TableInsertChange {
   values: TableCellChange[];
 }
 
-export type TableDataChange = TableUpdateChange | TableInsertChange;
+export interface TableDeleteChange {
+  kind: "delete";
+  rowLocator: string;
+}
+
+export type TableDataChange = TableUpdateChange | TableInsertChange | TableDeleteChange;
 
 export interface TableSaveRequest {
   table: TableReference;
@@ -54,6 +59,7 @@ export interface TableSaveRequest {
 export interface TableSaveResult {
   updatedRows: number;
   insertedRows: number;
+  deletedRows: number;
 }
 
 export interface TableDataProvider {

@@ -100,13 +100,13 @@ describe("OpenTableService contracts", () => {
     });
   });
 
-  it("maps editor updates and inserts to TableDataProvider changes", () => {
+  it("maps editor updates, inserts, and deletes to TableDataProvider changes", () => {
     const service = createService();
-    (service as unknown as { activeRowTokens: string[] }).activeRowTokens = ["(0,1)"];
+    (service as unknown as { activeRowTokens: string[] }).activeRowTokens = ["(0,1)", "(0,2)"];
 
     const mapped = (service as unknown as {
       toTableDataChanges: (changes: Array<{
-        kind: "update" | "insert";
+        kind: "update" | "insert" | "delete";
         rowIndex?: number;
         updates?: Array<{ columnIndex: number; value: string; isNull: boolean }>;
         values?: Array<{ columnIndex: number; value: string; isNull: boolean }>;
@@ -120,6 +120,10 @@ describe("OpenTableService contracts", () => {
       {
         kind: "insert",
         values: [{ columnIndex: 0, value: "2", isNull: false }]
+      },
+      {
+        kind: "delete",
+        rowIndex: 1
       }
     ]);
 
@@ -132,6 +136,10 @@ describe("OpenTableService contracts", () => {
       {
         kind: "insert",
         values: [{ columnIndex: 0, value: "2", isNull: false }]
+      },
+      {
+        kind: "delete",
+        rowLocator: "(0,2)"
       }
     ]);
   });
@@ -178,7 +186,8 @@ describe("OpenTableService contracts", () => {
       }),
       saveChanges: async (): Promise<TableSaveResult> => ({
         updatedRows: 0,
-        insertedRows: 0
+        insertedRows: 0,
+        deletedRows: 0
       })
     };
 

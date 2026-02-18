@@ -188,6 +188,37 @@ describe("OpenTableService helpers", () => {
     });
   });
 
+  it("builds delete statements and skips empty row locators", () => {
+    const service = createService();
+    const buildDeleteStatement = (service as unknown as {
+      buildDeleteStatement: (
+        table: { schemaName: string; tableName: string },
+        change: {
+          kind: "delete";
+          rowIndex: number;
+        },
+        rowToken: string
+      ) => { sql: string; values: unknown[] } | undefined;
+    }).buildDeleteStatement.bind(service);
+
+    const statement = buildDeleteStatement(
+      { schemaName: "public", tableName: "users" },
+      { kind: "delete", rowIndex: 0 },
+      "(0,7)"
+    );
+    assert.deepStrictEqual(statement, {
+      sql: 'DELETE FROM "public"."users" WHERE ctid = $1::tid;',
+      values: ["(0,7)"]
+    });
+
+    const skipped = buildDeleteStatement(
+      { schemaName: "public", tableName: "users" },
+      { kind: "delete", rowIndex: 0 },
+      ""
+    );
+    assert.strictEqual(skipped, undefined);
+  });
+
   it("formats row values for editor display", () => {
     const service = createService();
     const toEditorRow = (service as unknown as {

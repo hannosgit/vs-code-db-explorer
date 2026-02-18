@@ -36,7 +36,15 @@ export interface DataEditorInsertChange {
   values: DataEditorCellUpdate[];
 }
 
-export type DataEditorChange = DataEditorUpdateChange | DataEditorInsertChange;
+export interface DataEditorDeleteChange {
+  kind: "delete";
+  rowIndex: number;
+}
+
+export type DataEditorChange =
+  | DataEditorUpdateChange
+  | DataEditorInsertChange
+  | DataEditorDeleteChange;
 
 type SaveHandler = (changes: DataEditorChange[]) => void | Promise<void>;
 type RefreshHandler = () => void | Promise<void>;
@@ -271,8 +279,19 @@ function buildHtml(
       padding: 6px 8px;
       color: var(--vscode-descriptionForeground);
     }
+    th.row-actions,
+    td.row-actions {
+      width: 1%;
+      white-space: nowrap;
+      text-align: center;
+      padding: 4px 6px;
+    }
     th.row-number {
       font-weight: 600;
+    }
+    td.row-actions button {
+      padding: 2px 8px;
+      font-size: 11px;
     }
     td input,
     td select {
@@ -301,6 +320,12 @@ function buildHtml(
     tr.new-row td {
       background: var(--vscode-editor-inactiveSelectionBackground, rgba(127, 127, 127, 0.12));
     }
+    tr.deleted-row td {
+      opacity: 0.75;
+    }
+    tr.deleted-row td:not(.row-actions):not(.row-number) {
+      text-decoration: line-through;
+    }
     .empty, .error {
       padding: 16px;
       color: var(--vscode-descriptionForeground);
@@ -328,7 +353,7 @@ function buildHtml(
       </div>
     </div>
   </header>
-  <div class="note">Tip: use <strong>Add row</strong> to insert and type <strong>NULL</strong> to set a value to NULL.</div>
+  <div class="note">Tip: use <strong>Add row</strong> to insert, <strong>Delete</strong> to remove rows, and type <strong>NULL</strong> to set a value to NULL.</div>
   ${body}
   <textarea id="initial-state" hidden>${safeState}</textarea>
   <script src="${scriptUri}" defer></script>
@@ -348,7 +373,7 @@ function renderTableShell(columns: string[], columnTypes: string[]): string {
     <div class="table-wrap">
       <table id="data-table">
         <thead>
-          <tr><th class="row-number">#</th>${headers}</tr>
+          <tr><th class="row-number">#</th><th class="row-actions">Actions</th>${headers}</tr>
         </thead>
         <tbody></tbody>
       </table>

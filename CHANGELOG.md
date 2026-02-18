@@ -7,6 +7,7 @@
 - Add `Drop Table` context menu command for schema table nodes
 - Add `Truncate Table` context menu command for schema table nodes
 - Use command `category` for `DB Explorer` and shorten command titles
+- Add delete-row support in the Data Editor with per-row Delete/Undo actions
 
 ## 0.0.2
 

@@ -239,7 +239,7 @@ function createFakeSession(options: {
         pageIndex: 0,
         hasNextPage: false
       }),
-      saveChanges: async () => ({ updatedRows: 0, insertedRows: 0 })
+      saveChanges: async () => ({ updatedRows: 0, insertedRows: 0, deletedRows: 0 })
     },
     sqlDialect: {
       quoteIdentifier: (identifier: string) => identifier,

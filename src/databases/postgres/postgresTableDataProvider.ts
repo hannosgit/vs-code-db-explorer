@@ -1,5 +1,6 @@
 import {
   TableDataProvider,
+  TableDeleteChange,
   TableInsertChange,
   TablePageRequest,
   TablePageResult,
@@ -83,12 +84,13 @@ export class PostgresTableDataProvider implements TableDataProvider {
 
   async saveChanges(request: TableSaveRequest): Promise<TableSaveResult> {
     if (!request.changes.length || request.columns.length === 0) {
-      return { updatedRows: 0, insertedRows: 0 };
+      return { updatedRows: 0, insertedRows: 0, deletedRows: 0 };
     }
 
     const client = await this.driver.connect();
     let updatedRows = 0;
     let insertedRows = 0;
+    let deletedRows = 0;
 
     try {
       await client.query("BEGIN");
@@ -110,6 +112,21 @@ export class PostgresTableDataProvider implements TableDataProvider {
           continue;
         }
 
+        if (change.kind === "delete") {
+          const statement = PostgresTableDataProvider.buildDeleteStatement(
+            request.table,
+            change,
+            this.dialect
+          );
+          if (!statement) {
+            continue;
+          }
+
+          const result = await client.query<QueryResultLike>(statement.sql, statement.values);
+          deletedRows += this.readRowCount(result);
+          continue;
+        }
+
         const statement = PostgresTableDataProvider.buildUpdateStatement(
           request.table,
           request.columns,
@@ -125,7 +142,7 @@ export class PostgresTableDataProvider implements TableDataProvider {
       }
 
       await client.query("COMMIT");
-      return { updatedRows, insertedRows };
+      return { updatedRows, insertedRows, deletedRows };
     } catch (error) {
       await client.query("ROLLBACK");
       throw error;
@@ -327,6 +344,22 @@ export class PostgresTableDataProvider implements TableDataProvider {
     )});`;
 
     return { sql, values };
+  }
+
+  static buildDeleteStatement(
+    table: TableReference,
+    change: TableDeleteChange,
+    dialect: SqlDialect = new PostgresDialect()
+  ): { sql: string; values: unknown[] } | undefined {
+    if (!change.rowLocator) {
+      return undefined;
+    }
+
+    const qualified = `${dialect.quoteIdentifier(table.schemaName)}.${dialect.quoteIdentifier(
+      table.tableName
+    )}`;
+    const sql = `DELETE FROM ${qualified} WHERE ctid = $1::tid;`;
+    return { sql, values: [change.rowLocator] };
   }
 
   static quoteIdentifier(identifier: string): string {
