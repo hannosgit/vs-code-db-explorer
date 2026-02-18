@@ -175,6 +175,12 @@
                 "type": "string",
                 "description": "Display name for the profile."
               },
+              "engine": {
+                "type": "string",
+                "enum": ["postgres"],
+                "default": "postgres",
+                "description": "Database engine. Defaults to \"postgres\" when omitted."
+              },
               "host": {
                 "type": "string",
                 "description": "Host name or IP."

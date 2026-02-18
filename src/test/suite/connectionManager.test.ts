@@ -1,7 +1,6 @@
 import * as assert from "assert";
 import * as vscode from "vscode";
 import { describe, it } from "mocha";
-import { Pool } from "pg";
 import {
   ConnectionManager,
   ConnectionProfile
@@ -12,6 +11,7 @@ import {
   DatabaseSession,
   DatabaseSessionCredentials
 } from "../../databases/contracts";
+import { PostgresPoolLike } from "../../databases/postgres/postgresConnectionDriver";
 
 type SpySecretStorage = vscode.SecretStorage & {
   stored?: { key: string; value: string };
@@ -56,6 +56,35 @@ describe("ConnectionManager", () => {
     await manager.clearStoredPassword("local");
 
     assert.strictEqual(secrets.deleted, "dbExplorer.password.local");
+  });
+
+  it("defaults missing profile engine to postgres when listing profiles", () => {
+    const workspaceApi = vscode.workspace as unknown as {
+      getConfiguration: typeof vscode.workspace.getConfiguration;
+    };
+    const originalGetConfiguration = workspaceApi.getConfiguration;
+    workspaceApi.getConfiguration = (() =>
+      ({
+        get: () => [
+          {
+            id: "legacy",
+            label: "Legacy",
+            host: "localhost",
+            port: 5432,
+            database: "postgres",
+            user: "postgres"
+          }
+        ]
+      }) as unknown as vscode.WorkspaceConfiguration) as typeof vscode.workspace.getConfiguration;
+
+    try {
+      const manager = new ConnectionManager(createSpySecretStorage());
+      const profiles = manager.listProfiles();
+      assert.strictEqual(profiles.length, 1);
+      assert.strictEqual(profiles[0].engine, "postgres");
+    } finally {
+      workspaceApi.getConfiguration = originalGetConfiguration;
+    }
   });
 
   it("defaults missing profile engine to postgres when resolving adapters", async () => {
@@ -110,7 +139,14 @@ describe("ConnectionManager", () => {
   });
 
   it("returns a compatible pool from sessions that expose getPool", async () => {
-    const fakePool = {} as Pool;
+    const fakePool: PostgresPoolLike = {
+      query: async () => ({}),
+      connect: async () => ({
+        query: async () => ({}),
+        release: () => {}
+      }),
+      end: async () => {}
+    };
     const fakeSession = createFakeSession({
       getPool: () => fakePool
     });
@@ -160,7 +196,7 @@ function createProfile(overrides: Partial<ConnectionProfile> = {}): ConnectionPr
 
 function createFakeSession(options: {
   dispose?: () => Promise<void>;
-  getPool?: () => Pool;
+  getPool?: () => PostgresPoolLike;
 } = {}): DatabaseSession {
   const dispose = options.dispose ?? (async () => {});
   const session: DatabaseSession = {
@@ -214,7 +250,7 @@ function createFakeSession(options: {
   };
 
   if (options.getPool) {
-    (session as DatabaseSession & { getPool: () => Pool }).getPool = options.getPool;
+    (session as DatabaseSession & { getPool: () => PostgresPoolLike }).getPool = options.getPool;
   }
 
   return session;

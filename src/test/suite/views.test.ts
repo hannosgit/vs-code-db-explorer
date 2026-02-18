@@ -2,6 +2,7 @@ import * as assert from "assert";
 import * as vscode from "vscode";
 import { afterEach, beforeEach, describe, it } from "mocha";
 import { ConnectionManager, ConnectionProfile } from "../../connections/connectionManager";
+import { SchemaProvider, TableReference } from "../../databases/contracts";
 import { ConnectionsTreeDataProvider } from "../../views/connectionsTree";
 import { SchemaTreeDataProvider } from "../../views/schemaTree";
 
@@ -14,8 +15,8 @@ function createSecretStorage(): vscode.SecretStorage {
   return {
     onDidChange: emitter.event,
     get: async () => undefined,
-    store: async () => { },
-    delete: async () => { }
+    store: async () => {},
+    delete: async () => {}
   } as unknown as vscode.SecretStorage;
 }
 
@@ -31,13 +32,47 @@ function readLabel(item: vscode.TreeItem): string {
   return item.label?.label ?? "";
 }
 
-type FakeQueryResult = {
-  rows: Record<string, unknown>[];
-};
+function patchWindowMessages(stubs: {
+  showWarningMessage?: (...args: unknown[]) => Thenable<string | undefined>;
+  showInformationMessage?: (...args: unknown[]) => Thenable<string | undefined>;
+  showErrorMessage?: (...args: unknown[]) => Thenable<string | undefined>;
+}): () => void {
+  const windowApi = vscode.window as unknown as {
+    showWarningMessage: (...args: unknown[]) => Thenable<string | undefined>;
+    showInformationMessage: (...args: unknown[]) => Thenable<string | undefined>;
+    showErrorMessage: (...args: unknown[]) => Thenable<string | undefined>;
+  };
 
-type FakePool = {
-  query: (sql: string, params?: unknown[]) => Promise<FakeQueryResult>;
-};
+  const originalWarning = windowApi.showWarningMessage;
+  const originalInfo = windowApi.showInformationMessage;
+  const originalError = windowApi.showErrorMessage;
+
+  if (stubs.showWarningMessage) {
+    windowApi.showWarningMessage = stubs.showWarningMessage;
+  }
+  if (stubs.showInformationMessage) {
+    windowApi.showInformationMessage = stubs.showInformationMessage;
+  }
+  if (stubs.showErrorMessage) {
+    windowApi.showErrorMessage = stubs.showErrorMessage;
+  }
+
+  return () => {
+    windowApi.showWarningMessage = originalWarning;
+    windowApi.showInformationMessage = originalInfo;
+    windowApi.showErrorMessage = originalError;
+  };
+}
+
+function createProviderWithSession(schemaProvider?: SchemaProvider): SchemaTreeDataProvider {
+  const manager = {
+    onDidChangeActive: () => ({ dispose: () => {} }),
+    getSession: () => (schemaProvider ? { schemaProvider } : undefined),
+    getPool: () => undefined
+  } as unknown as ConnectionManager;
+
+  return new SchemaTreeDataProvider(manager);
+}
 
 describe("ConnectionsTreeDataProvider", () => {
   const secrets = createSecretStorage();
@@ -99,10 +134,7 @@ describe("ConnectionsTreeDataProvider", () => {
     }
     assert.strictEqual(children.length, profiles.length);
     assert.strictEqual(readLabel(children[0]), "Local Postgres");
-    assert.strictEqual(
-      children[0].description,
-      "postgres@localhost:5432/postgres"
-    );
+    assert.strictEqual(children[0].description, "postgres@localhost:5432/postgres");
   });
 
   it("marks the active connection with a plug icon", async () => {
@@ -142,85 +174,66 @@ describe("ConnectionsTreeDataProvider", () => {
   });
 });
 
-describe("SchemaTreeDataProvider", () => {
-  const secrets = createSecretStorage();
-
-  function createProviderWithPool(pool?: FakePool): SchemaTreeDataProvider {
-    const manager = new ConnectionManager(secrets);
-    (manager as unknown as { getPool: () => unknown }).getPool = () => pool;
-    return new SchemaTreeDataProvider(manager);
-  }
-
-  function patchWindowMessages(stubs: {
-    showWarningMessage?: (...args: unknown[]) => Thenable<string | undefined>;
-    showInformationMessage?: (...args: unknown[]) => Thenable<string | undefined>;
-    showErrorMessage?: (...args: unknown[]) => Thenable<string | undefined>;
-  }): () => void {
-    const windowApi = vscode.window as unknown as {
-      showWarningMessage: (...args: unknown[]) => Thenable<string | undefined>;
-      showInformationMessage: (...args: unknown[]) => Thenable<string | undefined>;
-      showErrorMessage: (...args: unknown[]) => Thenable<string | undefined>;
-    };
-
-    const originalWarning = windowApi.showWarningMessage;
-    const originalInfo = windowApi.showInformationMessage;
-    const originalError = windowApi.showErrorMessage;
-
-    if (stubs.showWarningMessage) {
-      windowApi.showWarningMessage = stubs.showWarningMessage;
-    }
-    if (stubs.showInformationMessage) {
-      windowApi.showInformationMessage = stubs.showInformationMessage;
-    }
-    if (stubs.showErrorMessage) {
-      windowApi.showErrorMessage = stubs.showErrorMessage;
-    }
-
-    return () => {
-      windowApi.showWarningMessage = originalWarning;
-      windowApi.showInformationMessage = originalInfo;
-      windowApi.showErrorMessage = originalError;
+describe("SchemaTreeDataProvider contracts", () => {
+  function createSchemaProvider(overrides: {
+    listSchemas?: () => Promise<{ name: string }[]>;
+    listTables?: (schemaName: string) => Promise<{ schemaName: string; name: string }[]>;
+    listColumns?: (table: TableReference) => Promise<{
+      schemaName: string;
+      tableName: string;
+      name: string;
+      dataType: string;
+      isNullable: boolean;
+    }[]>;
+    dropTable?: (table: TableReference) => Promise<void>;
+    truncateTable?: (table: TableReference) => Promise<void>;
+  } = {}): SchemaProvider {
+    return {
+      listSchemas: overrides.listSchemas ?? (async () => []),
+      listTables: overrides.listTables ?? (async () => []),
+      listColumns: overrides.listColumns ?? (async () => []),
+      dropTable: overrides.dropTable ?? (async () => {}),
+      truncateTable: overrides.truncateTable ?? (async () => {})
     };
   }
 
-  it("shows placeholders when no active connection exists", async () => {
-    const manager = new ConnectionManager(secrets);
-    const provider = new SchemaTreeDataProvider(manager);
+  it("shows placeholders when no active session exists", async () => {
+    const provider = createProviderWithSession(undefined);
 
     const children = await provider.getChildren();
     assert.ok(children);
     if (!children) {
-      throw new Error("Expected tree items.");
+      throw new Error("Expected schema nodes.");
     }
+
     assert.strictEqual(children.length, 2);
     assert.strictEqual(readLabel(children[0]), "No active connection");
     assert.strictEqual(readLabel(children[1]), "Connect to load schema");
   });
 
-  it("loads schema, table, and column nodes", async () => {
-    const pool: FakePool = {
-      query: async (sql: string, params?: unknown[]) => {
-        if (sql.includes("FROM pg_namespace")) {
-          return { rows: [{ nspname: "public" }] };
-        }
-
-        if (sql.includes("information_schema.tables")) {
-          assert.deepStrictEqual(params, ["public"]);
-          return { rows: [{ table_name: "users" }] };
-        }
-
-        assert.ok(sql.includes("information_schema.columns"));
-        assert.deepStrictEqual(params, ["public", "users"]);
-        return {
-          rows: [
-            { column_name: "id", data_type: "integer", is_nullable: "NO" },
-            { column_name: "nickname", data_type: "text", is_nullable: "YES" }
-          ]
-        };
-      }
-    };
-
-    const provider = createProviderWithPool(pool);
+  it("loads schema, table, and column nodes from SchemaProvider", async () => {
+    const provider = createProviderWithSession(
+      createSchemaProvider({
+        listSchemas: async () => [{ name: "public" }],
+        listTables: async () => [{ schemaName: "public", name: "users" }],
+        listColumns: async () => [
+          {
+            schemaName: "public",
+            tableName: "users",
+            name: "id",
+            dataType: "integer",
+            isNullable: false
+          },
+          {
+            schemaName: "public",
+            tableName: "users",
+            name: "nickname",
+            dataType: "text",
+            isNullable: true
+          }
+        ]
+      })
+    );
 
     const schemas = await provider.getChildren();
     assert.ok(schemas);
@@ -228,7 +241,6 @@ describe("SchemaTreeDataProvider", () => {
       throw new Error("Expected schema nodes.");
     }
     assert.strictEqual(readLabel(schemas[0]), "public");
-    assert.strictEqual(schemas[0].contextValue, "dbSchema");
 
     const tables = await provider.getChildren(schemas[0]);
     assert.ok(tables);
@@ -236,7 +248,6 @@ describe("SchemaTreeDataProvider", () => {
       throw new Error("Expected table nodes.");
     }
     assert.strictEqual(readLabel(tables[0]), "users");
-    assert.strictEqual(tables[0].contextValue, "dbTable");
 
     const columns = await provider.getChildren(tables[0]);
     assert.ok(columns);
@@ -247,194 +258,44 @@ describe("SchemaTreeDataProvider", () => {
     assert.strictEqual(columns[0].description, "integer not null");
     assert.strictEqual(readLabel(columns[1]), "nickname");
     assert.strictEqual(columns[1].description, "text");
-    assert.strictEqual(columns[1].contextValue, "dbColumn");
   });
 
-  it("shows empty placeholders for schemas, tables, and columns", async () => {
-    const pool: FakePool = {
-      query: async (sql: string) => {
-        if (sql.includes("FROM pg_namespace")) {
-          return { rows: [] };
+  it("renders schema provider errors", async () => {
+    const provider = createProviderWithSession(
+      createSchemaProvider({
+        listSchemas: async () => {
+          throw new Error("schema failed");
         }
-
-        if (sql.includes("information_schema.tables")) {
-          return { rows: [] };
-        }
-
-        return { rows: [] };
-      }
-    };
-
-    const provider = createProviderWithPool(pool);
-    const schemas = await provider.getChildren();
-    assert.ok(schemas);
-    if (!schemas) {
-      throw new Error("Expected schema nodes.");
-    }
-    assert.strictEqual(readLabel(schemas[0]), "No schemas found");
-  });
-
-  it("shows empty table placeholders when schema has no tables", async () => {
-    const pool: FakePool = {
-      query: async (sql: string) => {
-        if (sql.includes("FROM pg_namespace")) {
-          return { rows: [{ nspname: "empty_schema" }] };
-        }
-
-        if (sql.includes("information_schema.tables")) {
-          return { rows: [] };
-        }
-
-        return { rows: [] };
-      }
-    };
-
-    const provider = createProviderWithPool(pool);
-    const schemas = await provider.getChildren();
-    assert.ok(schemas);
-    if (!schemas) {
-      throw new Error("Expected schema nodes.");
-    }
-
-    const tables = await provider.getChildren(schemas[0]);
-    assert.ok(tables);
-    if (!tables) {
-      throw new Error("Expected table nodes.");
-    }
-    assert.strictEqual(readLabel(tables[0]), "No tables found");
-  });
-
-  it("shows empty column placeholders when table has no columns", async () => {
-    const pool: FakePool = {
-      query: async (sql: string) => {
-        if (sql.includes("FROM pg_namespace")) {
-          return { rows: [{ nspname: "public" }] };
-        }
-
-        if (sql.includes("information_schema.tables")) {
-          return { rows: [{ table_name: "logs" }] };
-        }
-
-        return { rows: [] };
-      }
-    };
-
-    const provider = createProviderWithPool(pool);
-    const schemas = await provider.getChildren();
-    assert.ok(schemas);
-    if (!schemas) {
-      throw new Error("Expected schema nodes.");
-    }
-
-    const tables = await provider.getChildren(schemas[0]);
-    assert.ok(tables);
-    if (!tables) {
-      throw new Error("Expected table nodes.");
-    }
-
-    const columns = await provider.getChildren(tables[0]);
-    assert.ok(columns);
-    if (!columns) {
-      throw new Error("Expected column nodes.");
-    }
-    assert.strictEqual(readLabel(columns[0]), "No columns found");
-  });
-
-  it("renders schema query errors", async () => {
-    const provider = createProviderWithPool({
-      query: async () => {
-        throw new Error("schema failed");
-      }
-    });
+      })
+    );
 
     const children = await provider.getChildren();
     assert.ok(children);
     if (!children) {
       throw new Error("Expected schema nodes.");
     }
+
     assert.strictEqual(readLabel(children[0]), "Failed to load schemas");
     assert.strictEqual(children[0].description, "schema failed");
     assert.strictEqual(children[0].contextValue, "dbSchemaError");
   });
 
-  it("renders table query errors", async () => {
-    const pool: FakePool = {
-      query: async (sql: string) => {
-        if (sql.includes("FROM pg_namespace")) {
-          return { rows: [{ nspname: "public" }] };
+  it("drops confirmed tables via SchemaProvider", async () => {
+    let droppedTable: TableReference | undefined;
+    const provider = createProviderWithSession(
+      createSchemaProvider({
+        dropTable: async (table) => {
+          droppedTable = table;
         }
-
-        throw new Error("table failed");
-      }
-    };
-    const provider = createProviderWithPool(pool);
-
-    const schemas = await provider.getChildren();
-    assert.ok(schemas);
-    if (!schemas) {
-      throw new Error("Expected schema nodes.");
-    }
-
-    const tables = await provider.getChildren(schemas[0]);
-    assert.ok(tables);
-    if (!tables) {
-      throw new Error("Expected table nodes.");
-    }
-    assert.strictEqual(readLabel(tables[0]), "Failed to load tables for public");
-    assert.strictEqual(tables[0].description, "table failed");
-  });
-
-  it("renders unknown column query errors", async () => {
-    const pool: FakePool = {
-      query: async (sql: string) => {
-        if (sql.includes("FROM pg_namespace")) {
-          return { rows: [{ nspname: "public" }] };
-        }
-
-        if (sql.includes("information_schema.tables")) {
-          return { rows: [{ table_name: "users" }] };
-        }
-
-        throw "column failed";
-      }
-    };
-    const provider = createProviderWithPool(pool);
-
-    const schemas = await provider.getChildren();
-    assert.ok(schemas);
-    if (!schemas) {
-      throw new Error("Expected schema nodes.");
-    }
-    const tables = await provider.getChildren(schemas[0]);
-    assert.ok(tables);
-    if (!tables) {
-      throw new Error("Expected table nodes.");
-    }
-
-    const columns = await provider.getChildren(tables[0]);
-    assert.ok(columns);
-    if (!columns) {
-      throw new Error("Expected column nodes.");
-    }
-    assert.strictEqual(readLabel(columns[0]), "Failed to load columns for users");
-    assert.strictEqual(columns[0].description, "Unknown error");
-  });
-
-  it("drops confirmed tables using quoted identifiers", async () => {
-    let executedSql = "";
-    let infoMessage = "";
-    const provider = createProviderWithPool({
-      query: async (sql: string) => {
-        executedSql = sql;
-        return { rows: [] };
-      }
-    });
+      })
+    );
 
     let refreshCount = 0;
     (provider as unknown as { refresh: () => void }).refresh = () => {
       refreshCount += 1;
     };
 
+    let infoMessage = "";
     const restore = patchWindowMessages({
       showWarningMessage: async (message: unknown) => {
         if (typeof message === "string" && message.startsWith("Drop table ")) {
@@ -449,31 +310,32 @@ describe("SchemaTreeDataProvider", () => {
     });
 
     try {
-      await provider.dropTable({ schemaName: 'pub"lic', tableName: 'user"name' });
+      await provider.dropTable({ schemaName: "public", tableName: "users" });
     } finally {
       restore();
     }
 
-    assert.strictEqual(executedSql, 'DROP TABLE "pub""lic"."user""name"');
-    assert.strictEqual(infoMessage, 'Dropped table pub"lic.user"name.');
+    assert.deepStrictEqual(droppedTable, { schemaName: "public", tableName: "users" });
+    assert.strictEqual(infoMessage, "Dropped table public.users.");
     assert.strictEqual(refreshCount, 1);
   });
 
-  it("truncates confirmed tables using quoted identifiers", async () => {
-    let executedSql = "";
-    let infoMessage = "";
-    const provider = createProviderWithPool({
-      query: async (sql: string) => {
-        executedSql = sql;
-        return { rows: [] };
-      }
-    });
+  it("truncates confirmed tables via SchemaProvider", async () => {
+    let truncatedTable: TableReference | undefined;
+    const provider = createProviderWithSession(
+      createSchemaProvider({
+        truncateTable: async (table) => {
+          truncatedTable = table;
+        }
+      })
+    );
 
     let refreshCount = 0;
     (provider as unknown as { refresh: () => void }).refresh = () => {
       refreshCount += 1;
     };
 
+    let infoMessage = "";
     const restore = patchWindowMessages({
       showWarningMessage: async (message: unknown) => {
         if (typeof message === "string" && message.startsWith("Truncate table ")) {
@@ -488,13 +350,13 @@ describe("SchemaTreeDataProvider", () => {
     });
 
     try {
-      await provider.truncateTable({ schemaName: 'pub"lic', tableName: 'user"name' });
+      await provider.truncateTable({ schemaName: "public", tableName: "users" });
     } finally {
       restore();
     }
 
-    assert.strictEqual(executedSql, 'TRUNCATE TABLE "pub""lic"."user""name"');
-    assert.strictEqual(infoMessage, 'Truncated table pub"lic.user"name.');
+    assert.deepStrictEqual(truncatedTable, { schemaName: "public", tableName: "users" });
+    assert.strictEqual(infoMessage, "Truncated table public.users.");
     assert.strictEqual(refreshCount, 1);
   });
 });

@@ -21,6 +21,7 @@ Create a profile from the Command Palette with `DB Explorer: Add Connection`, or
   {
     "id": "local",
     "label": "Local Postgres",
+    "engine": "postgres",
     "host": "localhost",
     "port": 5432,
     "database": "postgres",

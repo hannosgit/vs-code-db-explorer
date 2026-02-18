@@ -54,6 +54,7 @@ describe("promptForNewConnection", () => {
     assert.ok(result);
     assert.strictEqual(result?.profile.id, "local-postgres");
     assert.strictEqual(result?.profile.label, "Local Postgres");
+    assert.strictEqual(result?.profile.engine, "postgres");
     assert.strictEqual(result?.profile.host, "localhost");
     assert.strictEqual(result?.profile.port, 5432);
     assert.strictEqual(result?.profile.database, "postgres");
@@ -82,6 +83,7 @@ describe("promptForNewConnection", () => {
       {
         id: "local-postgres",
         label: "Local Postgres",
+        engine: "postgres",
         host: "localhost",
         port: 5432,
         database: "postgres",

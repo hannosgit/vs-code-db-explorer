@@ -4,7 +4,11 @@ import {
   DatabaseConnectionProfile,
   DatabaseSession
 } from "../databases/contracts";
-import { PostgresAdapter } from "../databases/postgres";
+import {
+  createDefaultDatabaseAdapterRegistry,
+  DatabaseAdapterRegistry
+} from "../databases/databaseAdapterRegistry";
+import { DEFAULT_DATABASE_ENGINE } from "../databases/databaseEngines";
 import { PostgresPoolLike } from "../databases/postgres/postgresConnectionDriver";
 
 export interface ConnectionProfile {
@@ -24,23 +28,33 @@ export interface ConnectionState {
 
 export interface ConnectionManagerOptions {
   adapters?: DatabaseAdapter[];
+  adapterRegistry?: DatabaseAdapterRegistry;
 }
 
-const DEFAULT_PROFILE_ENGINE = "postgres";
+interface StoredConnectionProfile {
+  id: string;
+  label: string;
+  host: string;
+  port: number;
+  database: string;
+  user: string;
+  engine?: string;
+  [key: string]: unknown;
+}
 
 export class ConnectionManager {
   private static readonly passwordKeyPrefix = "dbExplorer.password.";
   private activeProfileId?: string;
   private readonly sessions = new Map<string, DatabaseSession>();
-  private readonly adapters = new Map<string, DatabaseAdapter>();
+  private readonly adapterRegistry: DatabaseAdapterRegistry;
   private readonly onDidChangeActiveEmitter = new vscode.EventEmitter<ConnectionState>();
 
   constructor(
     private readonly secrets: vscode.SecretStorage,
     options: ConnectionManagerOptions = {}
   ) {
-    const adapters = [new PostgresAdapter(), ...(options.adapters ?? [])];
-    adapters.forEach((adapter) => this.registerAdapter(adapter));
+    this.adapterRegistry = options.adapterRegistry ??
+      createDefaultDatabaseAdapterRegistry(options.adapters);
     void this.secrets;
   }
 
@@ -86,7 +100,8 @@ export class ConnectionManager {
 
   listProfiles(): ConnectionProfile[] {
     const config = vscode.workspace.getConfiguration("dbExplorer");
-    return config.get<ConnectionProfile[]>("profiles", []);
+    const profiles = config.get<StoredConnectionProfile[]>("profiles", []);
+    return profiles.map((profile) => this.toConnectionProfile(profile));
   }
 
   async clearStoredPassword(profileId: string): Promise<void> {
@@ -127,10 +142,6 @@ export class ConnectionManager {
     this.onDidChangeActiveEmitter.fire({ activeProfileId: undefined });
   }
 
-  private registerAdapter(adapter: DatabaseAdapter): void {
-    this.adapters.set(adapter.engine, adapter);
-  }
-
   private buildPasswordKey(profileId: string): string {
     return `${ConnectionManager.passwordKeyPrefix}${profileId}`;
   }
@@ -157,20 +168,27 @@ export class ConnectionManager {
 
   private resolveAdapter(profile: ConnectionProfile): DatabaseAdapter {
     const engine = this.resolveEngine(profile);
-    const adapter = this.adapters.get(engine);
+    const adapter = this.adapterRegistry.get(engine);
     if (!adapter) {
       throw new Error(`No database adapter registered for engine "${engine}".`);
     }
     return adapter;
   }
 
-  private resolveEngine(profile: ConnectionProfile): string {
+  private resolveEngine(profile: { engine?: unknown }): string {
     if (typeof profile.engine !== "string") {
-      return DEFAULT_PROFILE_ENGINE;
+      return DEFAULT_DATABASE_ENGINE;
     }
 
     const normalized = profile.engine.trim();
-    return normalized.length > 0 ? normalized : DEFAULT_PROFILE_ENGINE;
+    return normalized.length > 0 ? normalized : DEFAULT_DATABASE_ENGINE;
+  }
+
+  private toConnectionProfile(profile: StoredConnectionProfile): ConnectionProfile {
+    return {
+      ...profile,
+      engine: this.resolveEngine(profile)
+    };
   }
 
   private toDatabaseProfile(profile: ConnectionProfile): DatabaseConnectionProfile {

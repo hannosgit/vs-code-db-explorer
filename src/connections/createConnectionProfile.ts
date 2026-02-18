@@ -1,4 +1,5 @@
 import * as vscode from "vscode";
+import { DEFAULT_DATABASE_ENGINE } from "../databases/databaseEngines";
 import { ConnectionProfile } from "./connectionManager";
 
 export interface NewConnectionInput {
@@ -78,6 +79,7 @@ export async function promptForNewConnection(
   const profile: ConnectionProfile = {
     id: createUniqueProfileId(normalizedLabel, existingProfiles),
     label: normalizedLabel,
+    engine: DEFAULT_DATABASE_ENGINE,
     host: normalizedHost,
     port: normalizedPort,
     database: normalizedDatabase,
