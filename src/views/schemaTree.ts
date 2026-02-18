@@ -1,6 +1,8 @@
 import * as vscode from "vscode";
-import { Pool } from "pg";
 import { ConnectionManager } from "../connections/connectionManager";
+import { SchemaProvider } from "../databases/contracts";
+import { PostgresConnectionDriver } from "../databases/postgres/postgresConnectionDriver";
+import { PostgresSchemaProvider } from "../databases/postgres/postgresSchemaProvider";
 
 class SchemaPlaceholderItem extends vscode.TreeItem {
   constructor(label: string, description?: string) {
@@ -49,31 +51,17 @@ class ColumnItem extends vscode.TreeItem {
     public readonly tableName: string,
     public readonly columnName: string,
     dataType: string,
-    isNullable: string
+    isNullable: boolean
   ) {
     super(columnName, vscode.TreeItemCollapsibleState.None);
     this.contextValue = "dbColumn";
-    const nullableSuffix = isNullable === "YES" ? "" : " not null";
+    const nullableSuffix = isNullable ? "" : " not null";
     this.description = `${dataType}${nullableSuffix}`;
     this.iconPath = new vscode.ThemeIcon("symbol-field");
   }
 }
 
 type SchemaNode = SchemaPlaceholderItem | SchemaErrorItem | SchemaItem | TableItem | ColumnItem;
-
-interface SchemaRow {
-  nspname: string;
-}
-
-interface TableRow {
-  table_name: string;
-}
-
-interface ColumnRow {
-  column_name: string;
-  data_type: string;
-  is_nullable: string;
-}
 
 interface TableContext {
   schemaName: string;
@@ -99,12 +87,6 @@ export class SchemaTreeDataProvider implements vscode.TreeDataProvider<SchemaNod
       return;
     }
 
-    const pool = this.connectionManager.getPool();
-    if (!pool) {
-      void vscode.window.showWarningMessage("Connect to a DB profile first.");
-      return;
-    }
-
     const displayName = `${table.schemaName}.${table.tableName}`;
     const action = await vscode.window.showWarningMessage(
       `Drop table ${displayName}?`,
@@ -116,12 +98,14 @@ export class SchemaTreeDataProvider implements vscode.TreeDataProvider<SchemaNod
       return;
     }
 
-    const qualifiedName = `${this.quoteIdentifier(table.schemaName)}.${this.quoteIdentifier(
-      table.tableName
-    )}`;
+    const schemaProviderOrPlaceholder = this.getSchemaProviderOrPlaceholder();
+    if (Array.isArray(schemaProviderOrPlaceholder)) {
+      void vscode.window.showWarningMessage("Connect to a DB profile first.");
+      return;
+    }
 
     try {
-      await pool.query(`DROP TABLE ${qualifiedName}`);
+      await schemaProviderOrPlaceholder.dropTable(table);
       this.refresh();
       void vscode.window.showInformationMessage(`Dropped table ${displayName}.`);
     } catch (error) {
@@ -137,12 +121,6 @@ export class SchemaTreeDataProvider implements vscode.TreeDataProvider<SchemaNod
       return;
     }
 
-    const pool = this.connectionManager.getPool();
-    if (!pool) {
-      void vscode.window.showWarningMessage("Connect to a DB profile first.");
-      return;
-    }
-
     const displayName = `${table.schemaName}.${table.tableName}`;
     const action = await vscode.window.showWarningMessage(
       `Truncate table ${displayName}?`,
@@ -154,12 +132,14 @@ export class SchemaTreeDataProvider implements vscode.TreeDataProvider<SchemaNod
       return;
     }
 
-    const qualifiedName = `${this.quoteIdentifier(table.schemaName)}.${this.quoteIdentifier(
-      table.tableName
-    )}`;
+    const schemaProviderOrPlaceholder = this.getSchemaProviderOrPlaceholder();
+    if (Array.isArray(schemaProviderOrPlaceholder)) {
+      void vscode.window.showWarningMessage("Connect to a DB profile first.");
+      return;
+    }
 
     try {
-      await pool.query(`TRUNCATE TABLE ${qualifiedName}`);
+      await schemaProviderOrPlaceholder.truncateTable(table);
       this.refresh();
       void vscode.window.showInformationMessage(`Truncated table ${displayName}.`);
     } catch (error) {
@@ -188,76 +168,71 @@ export class SchemaTreeDataProvider implements vscode.TreeDataProvider<SchemaNod
     return [];
   }
 
-  private getPoolOrPlaceholder(): Pool | SchemaPlaceholderItem[] {
-    const pool = this.connectionManager.getPool();
-    if (!pool) {
-      return [
-        new SchemaPlaceholderItem("No active connection"),
-        new SchemaPlaceholderItem("Connect to load schema")
-      ];
+  private getSchemaProviderOrPlaceholder(): SchemaProvider | SchemaPlaceholderItem[] {
+    const session = this.connectionManager.getSession();
+    if (session) {
+      return session.schemaProvider;
     }
-    return pool;
+
+    const pool = this.connectionManager.getPool();
+    if (pool) {
+      return new PostgresSchemaProvider(new PostgresConnectionDriver(pool));
+    }
+
+    return [
+      new SchemaPlaceholderItem("No active connection"),
+      new SchemaPlaceholderItem("Connect to load schema")
+    ];
   }
 
   private async getSchemas(): Promise<SchemaNode[]> {
-    const poolOrPlaceholder = this.getPoolOrPlaceholder();
-    if (Array.isArray(poolOrPlaceholder)) {
-      return poolOrPlaceholder;
+    const schemaProviderOrPlaceholder = this.getSchemaProviderOrPlaceholder();
+    if (Array.isArray(schemaProviderOrPlaceholder)) {
+      return schemaProviderOrPlaceholder;
     }
 
-    const pool = poolOrPlaceholder;
     try {
-      const result = await pool.query<SchemaRow>(
-        "SELECT nspname FROM pg_namespace WHERE nspname NOT LIKE 'pg_%' AND nspname <> 'information_schema' ORDER BY nspname"
-      );
-      if (result.rows.length === 0) {
+      const schemas = await schemaProviderOrPlaceholder.listSchemas();
+      if (schemas.length === 0) {
         return [new SchemaPlaceholderItem("No schemas found")];
       }
-      return result.rows.map((row) => new SchemaItem(row.nspname));
+      return schemas.map((schema) => new SchemaItem(schema.name));
     } catch (error) {
       return [this.toErrorItem("Failed to load schemas", error)];
     }
   }
 
   private async getTables(schemaName: string): Promise<SchemaNode[]> {
-    const poolOrPlaceholder = this.getPoolOrPlaceholder();
-    if (Array.isArray(poolOrPlaceholder)) {
-      return poolOrPlaceholder;
+    const schemaProviderOrPlaceholder = this.getSchemaProviderOrPlaceholder();
+    if (Array.isArray(schemaProviderOrPlaceholder)) {
+      return schemaProviderOrPlaceholder;
     }
 
-    const pool = poolOrPlaceholder;
     try {
-      const result = await pool.query<TableRow>(
-        "SELECT table_name FROM information_schema.tables WHERE table_schema = $1 AND table_type = 'BASE TABLE' ORDER BY table_name",
-        [schemaName]
-      );
-      if (result.rows.length === 0) {
+      const tables = await schemaProviderOrPlaceholder.listTables(schemaName);
+      if (tables.length === 0) {
         return [new SchemaPlaceholderItem("No tables found")];
       }
-      return result.rows.map((row) => new TableItem(schemaName, row.table_name));
+      return tables.map((table) => new TableItem(table.schemaName, table.name));
     } catch (error) {
       return [this.toErrorItem(`Failed to load tables for ${schemaName}`, error)];
     }
   }
 
   private async getColumns(schemaName: string, tableName: string): Promise<SchemaNode[]> {
-    const poolOrPlaceholder = this.getPoolOrPlaceholder();
-    if (Array.isArray(poolOrPlaceholder)) {
-      return poolOrPlaceholder;
+    const schemaProviderOrPlaceholder = this.getSchemaProviderOrPlaceholder();
+    if (Array.isArray(schemaProviderOrPlaceholder)) {
+      return schemaProviderOrPlaceholder;
     }
 
-    const pool = poolOrPlaceholder;
     try {
-      const result = await pool.query<ColumnRow>(
-        "SELECT column_name, data_type, is_nullable FROM information_schema.columns WHERE table_schema = $1 AND table_name = $2 ORDER BY ordinal_position",
-        [schemaName, tableName]
-      );
-      if (result.rows.length === 0) {
+      const columns = await schemaProviderOrPlaceholder.listColumns({ schemaName, tableName });
+      if (columns.length === 0) {
         return [new SchemaPlaceholderItem("No columns found")];
       }
-      return result.rows.map(
+      return columns.map(
         (row) =>
-          new ColumnItem(schemaName, tableName, row.column_name, row.data_type, row.is_nullable)
+          new ColumnItem(schemaName, tableName, row.name, row.dataType, row.isNullable)
       );
     } catch (error) {
       return [this.toErrorItem(`Failed to load columns for ${tableName}`, error)];
@@ -292,9 +267,5 @@ export class SchemaTreeDataProvider implements vscode.TreeDataProvider<SchemaNod
       schemaName: maybe.schemaName,
       tableName: maybe.tableName
     };
-  }
-
-  private quoteIdentifier(value: string): string {
-    return `"${value.replace(/"/g, "\"\"")}"`;
   }
 }

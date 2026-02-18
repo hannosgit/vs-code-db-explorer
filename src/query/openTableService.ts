@@ -1,6 +1,18 @@
 import * as vscode from "vscode";
 import { ConnectionManager } from "../connections/connectionManager";
 import {
+  TableDataProvider,
+  TableDataChange,
+  TableInsertChange,
+  TableReference,
+  TableUpdateChange
+} from "../databases/contracts";
+import {
+  PostgresConnectionDriver,
+  PostgresPoolLike
+} from "../databases/postgres/postgresConnectionDriver";
+import { PostgresTableDataProvider } from "../databases/postgres/postgresTableDataProvider";
+import {
   DataEditorChange,
   DataEditorInsertChange,
   DataEditorPanel,
@@ -11,9 +23,8 @@ import {
 import { ResultsPanel } from "../webviews/resultsPanel";
 
 const DATA_EDITOR_PAGE_SIZE = 100;
-const ROW_TOKEN_ALIAS = "__postgres_explorer_row_token__";
 
-type TableContext = { schemaName: string; tableName: string };
+type TableContext = TableReference;
 
 export class OpenTableService {
   private panel?: DataEditorPanel;
@@ -34,8 +45,7 @@ export class OpenTableService {
       return;
     }
 
-    const pool = this.connectionManager.getPool();
-    if (!pool) {
+    if (!this.getTableDataProvider()) {
       void vscode.window.showWarningMessage("Connect to a DB profile first.");
       return;
     }
@@ -86,44 +96,15 @@ export class OpenTableService {
     limit: number,
     offset: number
   ): string {
-    const qualified = `${this.quoteIdentifier(schemaName)}.${this.quoteIdentifier(tableName)}`;
-    const rowToken = this.quoteIdentifier(ROW_TOKEN_ALIAS);
-    return `SELECT ctid::text AS ${rowToken}, * FROM ${qualified} ORDER BY ctid LIMIT ${limit} OFFSET ${offset};`;
+    return PostgresTableDataProvider.buildOpenTableSql(schemaName, tableName, limit, offset);
   }
 
   private buildColumnTypesSql(): string {
-    return `
-      SELECT a.attname AS column_name, pg_catalog.format_type(a.atttypid, a.atttypmod) AS column_type
-      FROM pg_catalog.pg_attribute a
-      JOIN pg_catalog.pg_class c ON c.oid = a.attrelid
-      JOIN pg_catalog.pg_namespace n ON n.oid = c.relnamespace
-      WHERE n.nspname = $1
-        AND c.relname = $2
-        AND a.attnum > 0
-        AND NOT a.attisdropped
-      ORDER BY a.attnum;
-    `;
+    return PostgresTableDataProvider.buildColumnTypesSql();
   }
 
   private buildColumnEnumValuesSql(): string {
-    return `
-      SELECT a.attname AS column_name, e.enumlabel AS enum_value
-      FROM pg_catalog.pg_attribute a
-      JOIN pg_catalog.pg_class c ON c.oid = a.attrelid
-      JOIN pg_catalog.pg_namespace n ON n.oid = c.relnamespace
-      JOIN pg_catalog.pg_type t ON t.oid = a.atttypid
-      JOIN pg_catalog.pg_type et ON et.oid = CASE
-        WHEN t.typtype = 'd' THEN t.typbasetype
-        ELSE t.oid
-      END
-      JOIN pg_catalog.pg_enum e ON e.enumtypid = et.oid
-      WHERE n.nspname = $1
-        AND c.relname = $2
-        AND a.attnum > 0
-        AND NOT a.attisdropped
-        AND et.typtype = 'e'
-      ORDER BY a.attnum, e.enumsortorder;
-    `;
+    return PostgresTableDataProvider.buildColumnEnumValuesSql();
   }
 
   private async loadColumnTypes(
@@ -135,20 +116,7 @@ export class OpenTableService {
       return [];
     }
 
-    try {
-      const result = await pool.query(this.buildColumnTypesSql(), [table.schemaName, table.tableName]);
-      const typeByColumn = new Map<string, string>();
-      for (const row of result.rows as Record<string, unknown>[]) {
-        const columnName = row.column_name;
-        const columnType = row.column_type;
-        if (typeof columnName === "string" && typeof columnType === "string") {
-          typeByColumn.set(columnName, columnType);
-        }
-      }
-      return columns.map((columnName) => typeByColumn.get(columnName) ?? "");
-    } catch {
-      return columns.map(() => "");
-    }
+    return PostgresTableDataProvider.loadColumnTypes(pool, table, columns);
   }
 
   private async loadColumnEnumValues(
@@ -160,27 +128,7 @@ export class OpenTableService {
       return [];
     }
 
-    try {
-      const result = await pool.query(this.buildColumnEnumValuesSql(), [table.schemaName, table.tableName]);
-      const enumValuesByColumn = new Map<string, string[]>();
-      for (const row of result.rows as Record<string, unknown>[]) {
-        const columnName = row.column_name;
-        const enumValue = row.enum_value;
-        if (typeof columnName !== "string" || typeof enumValue !== "string") {
-          continue;
-        }
-
-        const existing = enumValuesByColumn.get(columnName);
-        if (existing) {
-          existing.push(enumValue);
-        } else {
-          enumValuesByColumn.set(columnName, [enumValue]);
-        }
-      }
-      return columns.map((columnName) => enumValuesByColumn.get(columnName) ?? []);
-    } catch {
-      return columns.map(() => []);
-    }
+    return PostgresTableDataProvider.loadColumnEnumValues(pool, table, columns);
   }
 
   private async reload(): Promise<void> {
@@ -188,52 +136,36 @@ export class OpenTableService {
       return;
     }
 
-    const pool = this.connectionManager.getPool();
-    if (!pool) {
+    const tableDataProvider = this.getTableDataProvider();
+    if (!tableDataProvider) {
       void vscode.window.showWarningMessage("Connect to a DB profile first.");
       return;
     }
 
     const pageSize = this.normalizePageSize(DATA_EDITOR_PAGE_SIZE);
-    const offset = this.currentPage * pageSize;
-    const limit = pageSize + 1;
-    const sql = this.buildOpenTableSql(
-      this.activeTable.schemaName,
-      this.activeTable.tableName,
-      limit,
-      offset
-    );
 
     try {
-      const result = await pool.query(sql);
-      const columns = result.fields
-        .map((field) => field.name)
-        .filter((fieldName) => fieldName !== ROW_TOKEN_ALIAS);
-      const [columnTypes, columnEnumValues] = await Promise.all([
-        this.loadColumnTypes(this.activeTable, columns),
-        this.loadColumnEnumValues(this.activeTable, columns)
-      ]);
-      const hasNextPage = result.rows.length > pageSize;
-      const visibleRows = hasNextPage ? result.rows.slice(0, pageSize) : result.rows;
-      const rowTokens: string[] = [];
-      const rows = visibleRows.map((row) => this.toEditorRow(row, columns));
-      visibleRows.forEach((row) => {
-        const rowToken = row[ROW_TOKEN_ALIAS];
-        rowTokens.push(typeof rowToken === "string" ? rowToken : "");
+      const page = await tableDataProvider.loadPage({
+        table: this.activeTable,
+        pageSize,
+        pageIndex: this.currentPage
       });
+      const columns = page.columns.map((column) => column.name);
+      const columnTypes = page.columns.map((column) => column.dataType ?? "");
+      const columnEnumValues = page.columns.map((column) => column.enumValues ?? []);
       const state: DataEditorState = {
         schemaName: this.activeTable.schemaName,
         tableName: this.activeTable.tableName,
         columns,
         columnTypes,
         columnEnumValues,
-        rows,
-        pageSize,
+        rows: page.rows.map((row) => this.toEditorRowFromValues(row.values)),
+        pageSize: page.pageSize,
         pageNumber: this.currentPage + 1,
-        hasNextPage
+        hasNextPage: page.hasNextPage
       };
       this.activeState = state;
-      this.activeRowTokens = rowTokens;
+      this.activeRowTokens = page.rows.map((row) => row.rowLocator ?? "");
       this.panel?.showState(state);
     } catch (error) {
       const message = error instanceof Error ? error.message : "Failed to load table data.";
@@ -284,48 +216,19 @@ export class OpenTableService {
       return;
     }
 
-    const pool = this.connectionManager.getPool();
-    if (!pool) {
+    const tableDataProvider = this.getTableDataProvider();
+    if (!tableDataProvider) {
       void vscode.window.showWarningMessage("Connect to a DB profile first.");
       return;
     }
 
     try {
-      const client = await pool.connect();
-      let updatedRows = 0;
-      let insertedRows = 0;
-      try {
-        await client.query("BEGIN");
-        for (const change of changes) {
-          if (change.kind === "insert") {
-            const statement = this.buildInsertStatement(table, state.columns, change);
-            if (!statement) {
-              continue;
-            }
-            const result = await client.query(statement.sql, statement.values);
-            insertedRows += result.rowCount ?? 0;
-            continue;
-          }
-
-          const rowToken = this.activeRowTokens[change.rowIndex];
-          if (!rowToken) {
-            continue;
-          }
-
-          const statement = this.buildUpdateStatement(table, state.columns, change, rowToken);
-          if (!statement) {
-            continue;
-          }
-          const result = await client.query(statement.sql, statement.values);
-          updatedRows += result.rowCount ?? 0;
-        }
-        await client.query("COMMIT");
-      } catch (error) {
-        await client.query("ROLLBACK");
-        throw error;
-      } finally {
-        client.release();
-      }
+      const mappedChanges = this.toTableDataChanges(changes);
+      const { updatedRows, insertedRows } = await tableDataProvider.saveChanges({
+        table,
+        columns: state.columns,
+        changes: mappedChanges
+      });
 
       const summaryParts: string[] = [];
       if (updatedRows > 0) {
@@ -345,40 +248,86 @@ export class OpenTableService {
     }
   }
 
+  private toTableDataChanges(changes: DataEditorChange[]): TableDataChange[] {
+    const mapped: TableDataChange[] = [];
+
+    for (const change of changes) {
+      if (change.kind === "insert") {
+        const insertChange: TableInsertChange = {
+          kind: "insert",
+          values: change.values.map((value) => ({
+            columnIndex: value.columnIndex,
+            value: value.value,
+            isNull: value.isNull
+          }))
+        };
+        mapped.push(insertChange);
+        continue;
+      }
+
+      const rowToken = this.activeRowTokens[change.rowIndex];
+      if (!rowToken) {
+        continue;
+      }
+
+      const updateChange: TableUpdateChange = {
+        kind: "update",
+        rowLocator: rowToken,
+        updates: change.updates.map((update) => ({
+          columnIndex: update.columnIndex,
+          value: update.value,
+          isNull: update.isNull
+        }))
+      };
+      mapped.push(updateChange);
+    }
+
+    return mapped;
+  }
+
+  private getTableDataProvider(): TableDataProvider | undefined {
+    const manager = this.connectionManager as unknown as {
+      getSession?: () => { tableDataProvider: TableDataProvider } | undefined;
+      getPool?: () => unknown;
+    };
+
+    const session =
+      typeof manager.getSession === "function" ? manager.getSession() : undefined;
+    if (session) {
+      return session.tableDataProvider;
+    }
+
+    if (typeof manager.getPool !== "function") {
+      return undefined;
+    }
+
+    const pool = manager.getPool();
+    if (!pool) {
+      return undefined;
+    }
+
+    return new PostgresTableDataProvider(
+      new PostgresConnectionDriver(pool as PostgresPoolLike)
+    );
+  }
+
   private buildUpdateStatement(
     table: TableContext,
     columns: string[],
     change: DataEditorUpdateChange,
     rowToken: string
   ): { sql: string; values: unknown[] } | undefined {
-    if (!change.updates.length) {
-      return undefined;
-    }
+    const updateChange: TableUpdateChange = {
+      kind: "update",
+      rowLocator: rowToken,
+      updates: change.updates.map((update) => ({
+        columnIndex: update.columnIndex,
+        value: update.value,
+        isNull: update.isNull
+      }))
+    };
 
-    const values: unknown[] = [];
-    const setClauses: string[] = [];
-    for (const update of change.updates) {
-      const columnName = columns[update.columnIndex];
-      if (!columnName) {
-        continue;
-      }
-      setClauses.push(`${this.quoteIdentifier(columnName)} = $${values.length + 1}`);
-      values.push(update.isNull ? null : update.value);
-    }
-
-    if (setClauses.length === 0) {
-      return undefined;
-    }
-
-    const qualified = `${this.quoteIdentifier(table.schemaName)}.${this.quoteIdentifier(
-      table.tableName
-    )}`;
-    values.push(rowToken);
-    const sql = `UPDATE ${qualified} SET ${setClauses.join(", ")} WHERE ctid = $${
-      values.length
-    }::tid;`;
-
-    return { sql, values };
+    return PostgresTableDataProvider.buildUpdateStatement(table, columns, updateChange);
   }
 
   private buildInsertStatement(
@@ -386,47 +335,26 @@ export class OpenTableService {
     columns: string[],
     change: DataEditorInsertChange
   ): { sql: string; values: unknown[] } | undefined {
-    if (!change.values.length) {
-      return undefined;
-    }
+    const insertChange: TableInsertChange = {
+      kind: "insert",
+      values: change.values.map((value) => ({
+        columnIndex: value.columnIndex,
+        value: value.value,
+        isNull: value.isNull
+      }))
+    };
 
-    const columnNames: string[] = [];
-    const placeholders: string[] = [];
-    const values: unknown[] = [];
-    const seenColumns = new Set<number>();
-    for (const update of change.values) {
-      if (seenColumns.has(update.columnIndex)) {
-        continue;
-      }
-      const columnName = columns[update.columnIndex];
-      if (!columnName) {
-        continue;
-      }
-      seenColumns.add(update.columnIndex);
-      columnNames.push(this.quoteIdentifier(columnName));
-      placeholders.push(`$${values.length + 1}`);
-      values.push(update.isNull ? null : update.value);
-    }
-
-    if (columnNames.length === 0) {
-      return undefined;
-    }
-
-    const qualified = `${this.quoteIdentifier(table.schemaName)}.${this.quoteIdentifier(
-      table.tableName
-    )}`;
-    const sql = `INSERT INTO ${qualified} (${columnNames.join(", ")}) VALUES (${placeholders.join(
-      ", "
-    )});`;
-
-    return { sql, values };
+    return PostgresTableDataProvider.buildInsertStatement(table, columns, insertChange);
   }
 
   private toEditorRow(row: Record<string, unknown>, columns: string[]): EditorRow {
+    return this.toEditorRowFromValues(columns.map((column) => row[column]));
+  }
+
+  private toEditorRowFromValues(rowValues: unknown[]): EditorRow {
     const values: string[] = [];
     const nulls: boolean[] = [];
-    columns.forEach((column) => {
-      const value = row[column];
+    rowValues.forEach((value) => {
       if (value === null || value === undefined) {
         values.push("");
         nulls.push(true);
@@ -456,13 +384,10 @@ export class OpenTableService {
   }
 
   private normalizePageSize(limit: number): number {
-    if (!Number.isFinite(limit) || limit <= 0) {
-      return DATA_EDITOR_PAGE_SIZE;
-    }
-    return Math.floor(limit);
+    return PostgresTableDataProvider.normalizePageSize(limit, DATA_EDITOR_PAGE_SIZE);
   }
 
   private quoteIdentifier(identifier: string): string {
-    return `"${identifier.replace(/"/g, "\"\"")}"`;
+    return PostgresTableDataProvider.quoteIdentifier(identifier);
   }
 }

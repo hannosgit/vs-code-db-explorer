@@ -2,7 +2,6 @@ import * as vscode from "vscode";
 import { ConnectionManager } from "./connections/connectionManager";
 import { promptForNewConnection } from "./connections/createConnectionProfile";
 import { OpenTableService } from "./query/openTableService";
-import { runCancelableQuery } from "./query/queryRunner";
 import { SqlCodeLensProvider } from "./query/sqlCodeLensProvider";
 import { getAllSqlToRun, getSqlFromRange, getSqlToRun } from "./query/sqlText";
 import { ConnectionsTreeDataProvider } from "./views/connectionsTree";
@@ -205,8 +204,8 @@ export function activate(context: vscode.ExtensionContext): void {
           return;
         }
 
-        const pool = connectionManager.getPool();
-        if (!pool) {
+        const session = connectionManager.getSession();
+        if (!session) {
           void vscode.window.showWarningMessage("Connect to a DB profile first.");
           return;
         }
@@ -217,7 +216,7 @@ export function activate(context: vscode.ExtensionContext): void {
         panel.showLoading(sql);
         panel.setCancelHandler(undefined);
 
-        const { promise, cancel } = runCancelableQuery(pool, sql);
+        const { promise, cancel } = session.queryExecutor.runCancelable(sql);
         panel.setCancelHandler(cancel);
 
         const result = await promise;
@@ -243,8 +242,8 @@ export function activate(context: vscode.ExtensionContext): void {
         return;
       }
 
-      const pool = connectionManager.getPool();
-      if (!pool) {
+      const session = connectionManager.getSession();
+      if (!session) {
         void vscode.window.showWarningMessage("Connect to a DB profile first.");
         return;
       }
@@ -255,7 +254,7 @@ export function activate(context: vscode.ExtensionContext): void {
       panel.showLoading(sql);
       panel.setCancelHandler(undefined);
 
-      const { promise, cancel } = runCancelableQuery(pool, sql);
+      const { promise, cancel } = session.queryExecutor.runCancelable(sql);
       panel.setCancelHandler(cancel);
 
       const result = await promise;

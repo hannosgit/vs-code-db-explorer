@@ -1,5 +1,11 @@
 import * as vscode from "vscode";
-import { Pool } from "pg";
+import {
+  DatabaseAdapter,
+  DatabaseConnectionProfile,
+  DatabaseSession
+} from "../databases/contracts";
+import { PostgresAdapter } from "../databases/postgres";
+import { PostgresPoolLike } from "../databases/postgres/postgresConnectionDriver";
 
 export interface ConnectionProfile {
   id: string;
@@ -8,19 +14,33 @@ export interface ConnectionProfile {
   port: number;
   database: string;
   user: string;
+  engine?: string;
+  [key: string]: unknown;
 }
 
 export interface ConnectionState {
   activeProfileId?: string;
 }
 
+export interface ConnectionManagerOptions {
+  adapters?: DatabaseAdapter[];
+}
+
+const DEFAULT_PROFILE_ENGINE = "postgres";
+
 export class ConnectionManager {
   private static readonly passwordKeyPrefix = "dbExplorer.password.";
   private activeProfileId?: string;
-  private readonly pools = new Map<string, Pool>();
+  private readonly sessions = new Map<string, DatabaseSession>();
+  private readonly adapters = new Map<string, DatabaseAdapter>();
   private readonly onDidChangeActiveEmitter = new vscode.EventEmitter<ConnectionState>();
 
-  constructor(private readonly secrets: vscode.SecretStorage) {
+  constructor(
+    private readonly secrets: vscode.SecretStorage,
+    options: ConnectionManagerOptions = {}
+  ) {
+    const adapters = [new PostgresAdapter(), ...(options.adapters ?? [])];
+    adapters.forEach((adapter) => this.registerAdapter(adapter));
     void this.secrets;
   }
 
@@ -41,13 +61,27 @@ export class ConnectionManager {
     return this.listProfiles().find((profile) => profile.id === activeId);
   }
 
-  getPool(profileId?: string): Pool | undefined {
+  getSession(profileId?: string): DatabaseSession | undefined {
     const id = profileId ?? this.activeProfileId;
     if (!id) {
       return undefined;
     }
 
-    return this.pools.get(id);
+    return this.sessions.get(id);
+  }
+
+  getPool(profileId?: string): PostgresPoolLike | undefined {
+    const session = this.getSession(profileId);
+    if (!session) {
+      return undefined;
+    }
+
+    const maybeSessionWithPool = session as { getPool?: () => PostgresPoolLike };
+    if (typeof maybeSessionWithPool.getPool !== "function") {
+      return undefined;
+    }
+
+    return maybeSessionWithPool.getPool();
   }
 
   listProfiles(): ConnectionProfile[] {
@@ -56,17 +90,15 @@ export class ConnectionManager {
   }
 
   async clearStoredPassword(profileId: string): Promise<void> {
-    const passwordKey = `${ConnectionManager.passwordKeyPrefix}${profileId}`;
-    await this.secrets.delete(passwordKey);
+    await this.secrets.delete(this.buildPasswordKey(profileId));
   }
 
   async storePassword(profileId: string, password: string): Promise<void> {
-    const passwordKey = `${ConnectionManager.passwordKeyPrefix}${profileId}`;
-    await this.secrets.store(passwordKey, password);
+    await this.secrets.store(this.buildPasswordKey(profileId), password);
   }
 
   async connect(profileId: string): Promise<void> {
-    const profile = this.listProfiles().find((item) => item.id === profileId);
+    const profile = this.findProfile(profileId);
     if (!profile) {
       throw new Error(`Profile "${profileId}" not found.`);
     }
@@ -75,45 +107,13 @@ export class ConnectionManager {
       await this.disconnect();
     }
 
-    const existingPool = this.pools.get(profileId);
-    if (existingPool) {
-      await existingPool.end();
-      this.pools.delete(profileId);
-    }
+    await this.disposeSession(profileId);
 
-    const passwordKey = `${ConnectionManager.passwordKeyPrefix}${profile.id}`;
-    let password = await this.secrets.get(passwordKey);
-    if (password === undefined) {
-      const input = await vscode.window.showInputBox({
-        prompt: `Password for ${profile.user}@${profile.host}`,
-        password: true,
-        ignoreFocusOut: true
-      });
-      if (input === undefined) {
-        throw new Error("Connection canceled.");
-      }
-      password = input;
-      await this.secrets.store(passwordKey, password);
-    }
+    const adapter = this.resolveAdapter(profile);
+    const password = await this.resolvePassword(profile);
+    const session = await adapter.createSession(this.toDatabaseProfile(profile), { password });
 
-    const pool = new Pool({
-      host: profile.host,
-      port: profile.port,
-      database: profile.database,
-      user: profile.user,
-      password,
-      application_name: "VS Code DB Explorer"
-    });
-
-    try {
-      const client = await pool.connect();
-      client.release();
-    } catch (error) {
-      await pool.end();
-      throw error;
-    }
-
-    this.pools.set(profileId, pool);
+    this.sessions.set(profileId, session);
     this.activeProfileId = profileId;
     this.onDidChangeActiveEmitter.fire({ activeProfileId: profileId });
   }
@@ -121,13 +121,79 @@ export class ConnectionManager {
   async disconnect(): Promise<void> {
     const activeId = this.activeProfileId;
     if (activeId) {
-      const pool = this.pools.get(activeId);
-      if (pool) {
-        await pool.end();
-        this.pools.delete(activeId);
-      }
+      await this.disposeSession(activeId);
     }
     this.activeProfileId = undefined;
     this.onDidChangeActiveEmitter.fire({ activeProfileId: undefined });
+  }
+
+  private registerAdapter(adapter: DatabaseAdapter): void {
+    this.adapters.set(adapter.engine, adapter);
+  }
+
+  private buildPasswordKey(profileId: string): string {
+    return `${ConnectionManager.passwordKeyPrefix}${profileId}`;
+  }
+
+  private async resolvePassword(profile: ConnectionProfile): Promise<string> {
+    const passwordKey = this.buildPasswordKey(profile.id);
+    const storedPassword = await this.secrets.get(passwordKey);
+    if (storedPassword !== undefined) {
+      return storedPassword;
+    }
+
+    const input = await vscode.window.showInputBox({
+      prompt: `Password for ${profile.user}@${profile.host}`,
+      password: true,
+      ignoreFocusOut: true
+    });
+    if (input === undefined) {
+      throw new Error("Connection canceled.");
+    }
+
+    await this.secrets.store(passwordKey, input);
+    return input;
+  }
+
+  private resolveAdapter(profile: ConnectionProfile): DatabaseAdapter {
+    const engine = this.resolveEngine(profile);
+    const adapter = this.adapters.get(engine);
+    if (!adapter) {
+      throw new Error(`No database adapter registered for engine "${engine}".`);
+    }
+    return adapter;
+  }
+
+  private resolveEngine(profile: ConnectionProfile): string {
+    if (typeof profile.engine !== "string") {
+      return DEFAULT_PROFILE_ENGINE;
+    }
+
+    const normalized = profile.engine.trim();
+    return normalized.length > 0 ? normalized : DEFAULT_PROFILE_ENGINE;
+  }
+
+  private toDatabaseProfile(profile: ConnectionProfile): DatabaseConnectionProfile {
+    return {
+      ...profile,
+      engine: this.resolveEngine(profile)
+    };
+  }
+
+  private findProfile(profileId: string): ConnectionProfile | undefined {
+    return this.listProfiles().find((profile) => profile.id === profileId);
+  }
+
+  private async disposeSession(profileId: string): Promise<void> {
+    const existingSession = this.sessions.get(profileId);
+    if (!existingSession) {
+      return;
+    }
+
+    try {
+      await existingSession.dispose();
+    } finally {
+      this.sessions.delete(profileId);
+    }
   }
 }
