@@ -1,14 +1,23 @@
 # DB Explorer (VS Code Extension)
 
 VS Code extension for working with databases.
+
 Currently only PostgreSQL is supported.
 
 ## Screenshots
 
-| Activity Bar | Data Editor |
-| --- | --- |
-| ![DB Explorer Activity Bar](resources/readme/activity_bar.png) | ![DB Explorer Data Editor](resources/readme/dataeditor.png) |
+### Data Editor
 
+![DB Explorer Data Editor](resources/readme/dataeditor.png)
+
+### Statement CodeLens
+
+![DB Explorer Statement CodeLens](resources/readme/statement_codelens.png)
+
+
+### Activity Bar
+
+![DB Explorer Activity Bar](resources/readme/activity_bar.png)
 
 
 
@@ -36,6 +45,7 @@ When connecting, the extension will prompt for a password and store it in VS Cod
 
 - Connect via Command Palette: `DB Explorer: Connect`
 - Open a SQL file and place the cursor in a statement (or select SQL)
+- Use the `Run statement` CodeLens to run a single SQL statement directly from the editor
 - Run `DB Explorer: Run Query` to see results in a webview
 - Use the Cancel button in the results panel to stop long-running queries
 
