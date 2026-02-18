@@ -34,7 +34,7 @@ Use the notes below to contribute changes consistently.
 - Keep commits focused and mention user-facing changes in the PR description.
 - For UI/webview changes, include screenshots or short clips.
 - Note any new commands, settings, or config keys in the PR.
-- Automatically update `CHANGELOG.md` after each completed change with a concise entry describing what changed.
+- Automatically update `CHANGELOG.md` after each completed change with a concise entry describing what changed. Only add a change if it affects the user of the extension directly, e.g. do not include refactorings.
 
 ## Security & Configuration Tips
 - Do not commit credentials. Profiles live in VS Code settings under `dbExplorer.profiles` and passwords are stored in SecretStorage.
