@@ -11,6 +11,8 @@ export interface DataEditorState {
   columns: string[];
   columnTypes?: string[];
   columnEnumValues?: string[][];
+  sortColumn?: string;
+  sortDirection?: "asc" | "desc";
   rows: EditorRow[];
   pageSize: number;
   pageNumber: number;
@@ -50,12 +52,14 @@ type SaveHandler = (changes: DataEditorChange[]) => void | Promise<void>;
 type RefreshHandler = () => void | Promise<void>;
 type PageDirection = "previous" | "next";
 type PageHandler = (direction: PageDirection) => void | Promise<void>;
+type SortHandler = (columnIndex: number) => void | Promise<void>;
 
 export class DataEditorPanel {
   private static currentPanel: DataEditorPanel | undefined;
   private saveHandler?: SaveHandler;
   private refreshHandler?: RefreshHandler;
   private pageHandler?: PageHandler;
+  private sortHandler?: SortHandler;
 
   static createOrShow(
     extensionUri: vscode.Uri,
@@ -118,6 +122,15 @@ export class DataEditorPanel {
       ) {
         void this.pageHandler(message.direction);
       }
+
+      if (
+        message.command === "sort" &&
+        this.sortHandler &&
+        Number.isInteger(message.columnIndex) &&
+        message.columnIndex >= 0
+      ) {
+        void this.sortHandler(message.columnIndex);
+      }
     });
   }
 
@@ -131,6 +144,10 @@ export class DataEditorPanel {
 
   setPageHandler(handler?: PageHandler): void {
     this.pageHandler = handler;
+  }
+
+  setSortHandler(handler?: SortHandler): void {
+    this.sortHandler = handler;
   }
 
   showState(state: DataEditorState): void {
@@ -155,7 +172,10 @@ function buildHtml(
   ].join("; ");
   const headerTitle = `${escapeHtml(state.schemaName)}.${escapeHtml(state.tableName)}`;
   const rowCount = state.rows.length;
-  const rowSummary = `Page ${state.pageNumber} • ${rowCount} rows loaded (page size ${state.pageSize}).`;
+  const sortSummary = state.sortColumn
+    ? ` Sorted by ${escapeHtml(state.sortColumn)} (${state.sortDirection === "desc" ? "descending" : "ascending"}).`
+    : "";
+  const rowSummary = `Page ${state.pageNumber} • ${rowCount} rows loaded (page size ${state.pageSize}).${sortSummary}`;
   const addRowDisabled = state.loading || !!state.error || state.columns.length === 0;
   const prevPageDisabled = state.loading || state.pageNumber <= 1;
   const nextPageDisabled = state.loading || !!state.error || !state.hasNextPage;
@@ -163,7 +183,12 @@ function buildHtml(
     ? `<div class="empty">Loading table data...</div>`
     : state.error
       ? `<div class="error">${escapeHtml(state.error)}</div>`
-      : renderTableShell(state.columns, state.columnTypes ?? []);
+      : renderTableShell(
+          state.columns,
+          state.columnTypes ?? [],
+          state.sortColumn,
+          state.sortDirection
+        );
 
   return `<!DOCTYPE html>
 <html lang="en">
@@ -261,10 +286,34 @@ function buildHtml(
       font-weight: 600;
     }
     th .column-header {
-      display: inline-flex;
+      display: flex;
       align-items: baseline;
       gap: 6px;
       flex-wrap: wrap;
+    }
+    th button.column-sort {
+      all: unset;
+      box-sizing: border-box;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 8px;
+      width: 100%;
+      cursor: pointer;
+    }
+    th button.column-sort:focus-visible {
+      outline: 1px solid var(--vscode-focusBorder);
+      outline-offset: 2px;
+      border-radius: 3px;
+    }
+    th button.column-sort .sort-indicator {
+      color: var(--vscode-descriptionForeground);
+      font-size: 11px;
+      min-width: 12px;
+      text-align: right;
+    }
+    th button.column-sort.is-active .sort-indicator {
+      color: var(--vscode-editor-foreground);
     }
     th .column-type {
       font-size: 11px;
@@ -353,7 +402,7 @@ function buildHtml(
       </div>
     </div>
   </header>
-  <div class="note">Tip: use <strong>Add row</strong> to insert, <strong>Delete</strong> to remove rows, and type <strong>NULL</strong> to set a value to NULL.</div>
+  <div class="note">Tip: click a column header to sort, use <strong>Add row</strong> to insert, <strong>Delete</strong> to remove rows, and type <strong>NULL</strong> to set a value to NULL.</div>
   ${body}
   <textarea id="initial-state" hidden>${safeState}</textarea>
   <script src="${scriptUri}" defer></script>
@@ -361,12 +410,22 @@ function buildHtml(
 </html>`;
 }
 
-function renderTableShell(columns: string[], columnTypes: string[]): string {
+function renderTableShell(
+  columns: string[],
+  columnTypes: string[],
+  sortColumn?: string,
+  sortDirection?: "asc" | "desc"
+): string {
   const headers = columns
     .map((column, columnIndex) => {
       const columnType = columnTypes[columnIndex] ?? "";
       const typeLabel = columnType ? ` <span class="column-type">(${escapeHtml(columnType)})</span>` : "";
-      return `<th><span class="column-header">${escapeHtml(column)}${typeLabel}</span></th>`;
+      const isSorted = sortColumn === column;
+      const direction = sortDirection === "desc" ? "desc" : "asc";
+      const indicator = isSorted ? (direction === "desc" ? "▼" : "▲") : "↕";
+      const activeClass = isSorted ? " is-active" : "";
+      const label = escapeHtml(column);
+      return `<th><button type="button" class="column-sort${activeClass}" data-column-index="${columnIndex}" title="Sort by ${label}"><span class="column-header">${label}${typeLabel}</span><span class="sort-indicator">${indicator}</span></button></th>`;
     })
     .join("");
   return `

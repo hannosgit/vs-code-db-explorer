@@ -6,6 +6,8 @@ interface EditorRow {
 interface DataEditorState {
   columns: string[];
   columnEnumValues?: string[][];
+  sortColumn?: string;
+  sortDirection?: "asc" | "desc";
   rows: EditorRow[];
   pageSize: number;
   pageNumber: number;
@@ -83,6 +85,7 @@ function readState(documentObject: any): DataEditorState | undefined {
   const refreshButton = documentObject.getElementById("refresh");
   const prevPageButton = documentObject.getElementById("page-prev");
   const nextPageButton = documentObject.getElementById("page-next");
+  const sortButtons = Array.from(documentObject.querySelectorAll("button.column-sort"));
   const cellControls: any[] = [];
   const ENUM_NULL_VALUE = "__db_explorer_enum_null__";
 
@@ -104,7 +107,7 @@ function readState(documentObject: any): DataEditorState | undefined {
     });
   }
 
-  function canNavigatePage(): boolean {
+  function canDiscardUnsavedChanges(): boolean {
     if (!saveButton || saveButton.disabled) {
       return true;
     }
@@ -113,7 +116,7 @@ function readState(documentObject: any): DataEditorState | undefined {
 
   if (prevPageButton) {
     prevPageButton.addEventListener("click", () => {
-      if (!canNavigatePage()) {
+      if (!canDiscardUnsavedChanges()) {
         return;
       }
       vscode.postMessage({ command: "page", direction: "previous" });
@@ -122,12 +125,27 @@ function readState(documentObject: any): DataEditorState | undefined {
 
   if (nextPageButton) {
     nextPageButton.addEventListener("click", () => {
-      if (!canNavigatePage()) {
+      if (!canDiscardUnsavedChanges()) {
         return;
       }
       vscode.postMessage({ command: "page", direction: "next" });
     });
   }
+
+  sortButtons.forEach((button: any) => {
+    button.addEventListener("click", () => {
+      if (!canDiscardUnsavedChanges()) {
+        return;
+      }
+
+      const columnIndex = Number(button.dataset.columnIndex);
+      if (!Number.isInteger(columnIndex) || columnIndex < 0) {
+        return;
+      }
+
+      vscode.postMessage({ command: "sort", columnIndex });
+    });
+  });
 
   function createEmptyRow(): WorkingEditorRow {
     return {

@@ -4,6 +4,7 @@ import { describe, it } from "mocha";
 import { ConnectionManager } from "../../connections/connectionManager";
 import {
   TableDataProvider,
+  TablePageRequest,
   TablePageResult,
   TableReference,
   TableSaveResult
@@ -54,6 +55,7 @@ function patchDataEditorPanel(states: DataEditorState[]): () => void {
       setSaveHandler: (handler?: (changes: unknown[]) => void | Promise<void>) => void;
       setRefreshHandler: (handler?: () => void | Promise<void>) => void;
       setPageHandler: (handler?: (direction: "previous" | "next") => void | Promise<void>) => void;
+      setSortHandler: (handler?: (columnIndex: number) => void | Promise<void>) => void;
       showState: (state: DataEditorState) => void;
     };
   };
@@ -70,6 +72,7 @@ function patchDataEditorPanel(states: DataEditorState[]): () => void {
     setSaveHandler: () => {},
     setRefreshHandler: () => {},
     setPageHandler: () => {},
+    setSortHandler: () => {},
     showState: (state: DataEditorState) => {
       states.push(state);
     }
@@ -206,5 +209,73 @@ describe("OpenTableService contracts", () => {
     assert.deepStrictEqual(states[1].columnTypes, ["integer", "text"]);
     assert.deepStrictEqual(states[1].rows, [{ values: ["1", "Ada"], nulls: [false, false] }]);
     assert.strictEqual(states[1].hasNextPage, false);
+  });
+
+  it("requests sorted pages when sort changes", async () => {
+    const states: DataEditorState[] = [];
+    const requests: TablePageRequest[] = [];
+    const restorePanel = patchDataEditorPanel(states);
+
+    const fakeProvider: TableDataProvider = {
+      loadPage: async (request): Promise<TablePageResult> => {
+        requests.push(request);
+        return {
+          table: request.table,
+          columns: [
+            { name: "id", dataType: "integer", enumValues: [] },
+            { name: "name", dataType: "text", enumValues: [] }
+          ],
+          rows: [
+            {
+              rowLocator: "(0,1)",
+              values: [1, "Ada"]
+            }
+          ],
+          pageSize: request.pageSize,
+          pageIndex: request.pageIndex,
+          hasNextPage: true
+        };
+      },
+      saveChanges: async (): Promise<TableSaveResult> => ({
+        updatedRows: 0,
+        insertedRows: 0,
+        deletedRows: 0
+      })
+    };
+
+    try {
+      const service = createService({
+        getSession: () => ({ tableDataProvider: fakeProvider })
+      });
+      await service.open({ schemaName: "public", tableName: "users" });
+
+      await (service as unknown as {
+        changePage: (direction: "previous" | "next") => Promise<void>;
+      }).changePage("next");
+      await (service as unknown as { changeSort: (columnIndex: number) => Promise<void> }).changeSort(
+        1
+      );
+      await (service as unknown as { changeSort: (columnIndex: number) => Promise<void> }).changeSort(
+        1
+      );
+    } finally {
+      restorePanel();
+    }
+
+    assert.strictEqual(requests.length, 4);
+    assert.deepStrictEqual(
+      requests.map((request) => ({
+        pageIndex: request.pageIndex,
+        sortBy: request.sortBy
+      })),
+      [
+        { pageIndex: 0, sortBy: undefined },
+        { pageIndex: 1, sortBy: undefined },
+        { pageIndex: 0, sortBy: { columnName: "name", direction: "asc" } },
+        { pageIndex: 0, sortBy: { columnName: "name", direction: "desc" } }
+      ]
+    );
+    assert.strictEqual(states[states.length - 1].sortColumn, "name");
+    assert.strictEqual(states[states.length - 1].sortDirection, "desc");
   });
 });

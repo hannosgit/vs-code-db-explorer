@@ -7,6 +7,7 @@ import {
   TableReference,
   TableSaveRequest,
   TableSaveResult,
+  TableSort,
   TableUpdateChange
 } from "../contracts";
 import { SqlDialect } from "../contracts/sqlDialect";
@@ -45,6 +46,7 @@ export class PostgresTableDataProvider implements TableDataProvider {
       request.table.tableName,
       limit,
       offset,
+      request.sortBy,
       this.dialect
     );
     const result = await this.driver.query<QueryResultLike>(sql);
@@ -156,11 +158,18 @@ export class PostgresTableDataProvider implements TableDataProvider {
     tableName: string,
     limit: number,
     offset: number,
+    sortBy?: TableSort,
     dialect: SqlDialect = new PostgresDialect()
   ): string {
     const qualified = `${dialect.quoteIdentifier(schemaName)}.${dialect.quoteIdentifier(tableName)}`;
     const rowToken = dialect.quoteIdentifier(PostgresTableDataProvider.ROW_TOKEN_ALIAS);
-    return `SELECT ctid::text AS ${rowToken}, * FROM ${qualified} ORDER BY ctid LIMIT ${limit} OFFSET ${offset};`;
+    const sortColumnName = typeof sortBy?.columnName === "string" ? sortBy.columnName : "";
+    const hasSortColumn = sortColumnName.length > 0;
+    const direction = sortBy?.direction === "desc" ? "DESC" : "ASC";
+    const orderBy = hasSortColumn
+      ? `${dialect.quoteIdentifier(sortColumnName)} ${direction}, ctid`
+      : "ctid";
+    return `SELECT ctid::text AS ${rowToken}, * FROM ${qualified} ORDER BY ${orderBy} LIMIT ${limit} OFFSET ${offset};`;
   }
 
   static buildColumnTypesSql(): string {

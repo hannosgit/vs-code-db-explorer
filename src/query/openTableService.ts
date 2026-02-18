@@ -6,6 +6,8 @@ import {
   TableDeleteChange,
   TableInsertChange,
   TableReference,
+  TableSort,
+  TableSortDirection,
   TableUpdateChange
 } from "../databases/contracts";
 import {
@@ -34,6 +36,8 @@ export class OpenTableService {
   private activeState?: DataEditorState;
   private activeRowTokens: string[] = [];
   private currentPage = 0;
+  private currentSortColumn?: string;
+  private currentSortDirection: TableSortDirection = "asc";
 
   constructor(
     private readonly connectionManager: ConnectionManager,
@@ -54,6 +58,8 @@ export class OpenTableService {
 
     this.activeTable = table;
     this.currentPage = 0;
+    this.currentSortColumn = undefined;
+    this.currentSortDirection = "asc";
     const viewColumn = ResultsPanel.getViewColumn();
     ResultsPanel.disposeCurrentPanel();
     const panel = DataEditorPanel.createOrShow(this.extensionUri, viewColumn);
@@ -61,6 +67,7 @@ export class OpenTableService {
     panel.setSaveHandler((changes) => this.saveChanges(changes));
     panel.setRefreshHandler(() => this.reload());
     panel.setPageHandler((direction) => this.changePage(direction));
+    panel.setSortHandler((columnIndex) => this.changeSort(columnIndex));
 
     const pageSize = this.normalizePageSize(DATA_EDITOR_PAGE_SIZE);
 
@@ -96,9 +103,16 @@ export class OpenTableService {
     schemaName: string,
     tableName: string,
     limit: number,
-    offset: number
+    offset: number,
+    sortBy?: TableSort
   ): string {
-    return PostgresTableDataProvider.buildOpenTableSql(schemaName, tableName, limit, offset);
+    return PostgresTableDataProvider.buildOpenTableSql(
+      schemaName,
+      tableName,
+      limit,
+      offset,
+      sortBy
+    );
   }
 
   private buildColumnTypesSql(): string {
@@ -150,7 +164,13 @@ export class OpenTableService {
       const page = await tableDataProvider.loadPage({
         table: this.activeTable,
         pageSize,
-        pageIndex: this.currentPage
+        pageIndex: this.currentPage,
+        sortBy: this.currentSortColumn
+          ? {
+              columnName: this.currentSortColumn,
+              direction: this.currentSortDirection
+            }
+          : undefined
       });
       const columns = page.columns.map((column) => column.name);
       const columnTypes = page.columns.map((column) => column.dataType ?? "");
@@ -164,7 +184,9 @@ export class OpenTableService {
         rows: page.rows.map((row) => this.toEditorRowFromValues(row.values)),
         pageSize: page.pageSize,
         pageNumber: this.currentPage + 1,
-        hasNextPage: page.hasNextPage
+        hasNextPage: page.hasNextPage,
+        sortColumn: this.currentSortColumn,
+        sortDirection: this.currentSortColumn ? this.currentSortDirection : undefined
       };
       this.activeState = state;
       this.activeRowTokens = page.rows.map((row) => row.rowLocator ?? "");
@@ -179,6 +201,8 @@ export class OpenTableService {
         pageSize,
         pageNumber: this.currentPage + 1,
         hasNextPage: false,
+        sortColumn: this.currentSortColumn,
+        sortDirection: this.currentSortColumn ? this.currentSortDirection : undefined,
         error: message
       };
       this.activeState = state;
@@ -251,6 +275,24 @@ export class OpenTableService {
       const message = error instanceof Error ? error.message : "Failed to save changes.";
       void vscode.window.showErrorMessage(message);
     }
+  }
+
+  private async changeSort(columnIndex: number): Promise<void> {
+    const columns = this.activeState?.columns ?? [];
+    const columnName = columns[columnIndex];
+    if (!columnName) {
+      return;
+    }
+
+    if (this.currentSortColumn === columnName) {
+      this.currentSortDirection = this.currentSortDirection === "asc" ? "desc" : "asc";
+    } else {
+      this.currentSortColumn = columnName;
+      this.currentSortDirection = "asc";
+    }
+
+    this.currentPage = 0;
+    await this.reload();
   }
 
   private toTableDataChanges(changes: DataEditorChange[]): TableDataChange[] {

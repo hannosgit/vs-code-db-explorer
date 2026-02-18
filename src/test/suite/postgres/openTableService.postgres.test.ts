@@ -46,6 +46,7 @@ function patchDataEditorPanel(states: DataEditorState[]): () => void {
       setSaveHandler: (handler?: (changes: unknown[]) => void | Promise<void>) => void;
       setRefreshHandler: (handler?: () => void | Promise<void>) => void;
       setPageHandler: (handler?: (direction: "previous" | "next") => void | Promise<void>) => void;
+      setSortHandler: (handler?: (columnIndex: number) => void | Promise<void>) => void;
       showState: (state: DataEditorState) => void;
     };
   };
@@ -62,6 +63,7 @@ function patchDataEditorPanel(states: DataEditorState[]): () => void {
     setSaveHandler: () => {},
     setRefreshHandler: () => {},
     setPageHandler: () => {},
+    setSortHandler: () => {},
     showState: (state: DataEditorState) => {
       states.push(state);
     }
@@ -98,13 +100,26 @@ describe("OpenTableService helpers", () => {
       quoteIdentifier: (identifier: string) => string;
     }).quoteIdentifier.bind(service);
     const buildOpenTableSql = (service as unknown as {
-      buildOpenTableSql: (schemaName: string, tableName: string, limit: number, offset: number) => string;
+      buildOpenTableSql: (
+        schemaName: string,
+        tableName: string,
+        limit: number,
+        offset: number,
+        sortBy?: { columnName: string; direction: "asc" | "desc" }
+      ) => string;
     }).buildOpenTableSql.bind(service);
 
     assert.strictEqual(quoteIdentifier('user"name'), '"user""name"');
     assert.strictEqual(
       buildOpenTableSql("public", 'user"name', 101, 0),
       'SELECT ctid::text AS "__postgres_explorer_row_token__", * FROM "public"."user""name" ORDER BY ctid LIMIT 101 OFFSET 0;'
+    );
+    assert.strictEqual(
+      buildOpenTableSql("public", "users", 101, 0, {
+        columnName: 'display"name',
+        direction: "desc"
+      }),
+      'SELECT ctid::text AS "__postgres_explorer_row_token__", * FROM "public"."users" ORDER BY "display""name" DESC, ctid LIMIT 101 OFFSET 0;'
     );
   });
 

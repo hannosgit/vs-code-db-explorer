@@ -11,10 +11,18 @@ export interface TableRowData {
   values: unknown[];
 }
 
+export type TableSortDirection = "asc" | "desc";
+
+export interface TableSort {
+  columnName: string;
+  direction: TableSortDirection;
+}
+
 export interface TablePageRequest {
   table: TableReference;
   pageSize: number;
   pageIndex: number;
+  sortBy?: TableSort;
 }
 
 export interface TablePageResult {

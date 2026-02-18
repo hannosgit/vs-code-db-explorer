@@ -8,6 +8,7 @@
 - Add `Truncate Table` context menu command for schema table nodes
 - Use command `category` for `DB Explorer` and shorten command titles
 - Add delete-row support in the Data Editor with per-row Delete/Undo actions
+- Add column-header sorting in the Data Editor with click-to-toggle ascending/descending order
 
 ## 0.0.2
 
