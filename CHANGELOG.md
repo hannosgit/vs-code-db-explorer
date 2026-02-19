@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.0.4
+
+### Enchancements
+
 ## 0.0.3
 
 ### Enchancements
