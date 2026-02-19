@@ -27,6 +27,7 @@ describe("DB Explorer extension", () => {
 
     const expected = [
       "dbExplorer.addConnection",
+      "dbExplorer.deleteConnection",
       "dbExplorer.connect",
       "dbExplorer.disconnect",
       "dbExplorer.refreshSchema",

@@ -145,6 +145,10 @@ export function activate(context: vscode.ExtensionContext): void {
         void vscode.window.showErrorMessage(message);
       }
     }),
+    vscode.commands.registerCommand("dbExplorer.deleteConnection", async (item?: unknown) => {
+      await connectionsProvider.deleteConnection(item);
+      schemaProvider.refresh();
+    }),
     vscode.commands.registerCommand("dbExplorer.connect", async () => {
       const profiles = connectionManager.listProfiles();
       if (profiles.length === 0) {

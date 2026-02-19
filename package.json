@@ -27,6 +27,11 @@
         "category": "DB Explorer"
       },
       {
+        "command": "dbExplorer.deleteConnection",
+        "title": "Delete Connection",
+        "category": "DB Explorer"
+      },
+      {
         "command": "dbExplorer.connect",
         "title": "Connect",
         "category": "DB Explorer"
@@ -111,6 +116,11 @@
         }
       ],
       "view/item/context": [
+        {
+          "command": "dbExplorer.deleteConnection",
+          "when": "view == dbConnections && viewItem == dbConnection",
+          "group": "navigation@20"
+        },
         {
           "command": "dbExplorer.refreshSchema",
           "when": "view == dbSchema && viewItem == dbSchema",

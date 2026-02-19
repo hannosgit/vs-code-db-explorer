@@ -172,6 +172,121 @@ describe("ConnectionsTreeDataProvider", () => {
     assert.strictEqual((children[0].iconPath as vscode.ThemeIcon).id, "plug");
     assert.strictEqual((children[1].iconPath as vscode.ThemeIcon).id, "circle-outline");
   });
+
+  it("deletes selected connection profiles", async () => {
+    const profiles: ConnectionProfile[] = [
+      {
+        id: "local",
+        label: "Local Postgres",
+        host: "localhost",
+        port: 5432,
+        database: "postgres",
+        user: "postgres"
+      },
+      {
+        id: "staging",
+        label: "Staging",
+        host: "db.example",
+        port: 5432,
+        database: "app",
+        user: "app_user"
+      }
+    ];
+
+    await setProfiles(profiles);
+
+    let deletedSecretKey: string | undefined;
+    const emitter = new vscode.EventEmitter<vscode.SecretStorageChangeEvent>();
+    const trackedSecrets = {
+      onDidChange: emitter.event,
+      get: async () => undefined,
+      store: async () => {},
+      delete: async (key: string) => {
+        deletedSecretKey = key;
+      }
+    } as unknown as vscode.SecretStorage;
+
+    const manager = new ConnectionManager(trackedSecrets);
+    const provider = new ConnectionsTreeDataProvider(manager);
+
+    let infoMessage = "";
+    const restore = patchWindowMessages({
+      showWarningMessage: async (message: unknown) => {
+        if (typeof message === "string" && message.startsWith("Delete connection ")) {
+          return "Delete Connection";
+        }
+        return undefined;
+      },
+      showInformationMessage: async (message: unknown) => {
+        infoMessage = String(message);
+        return undefined;
+      }
+    });
+
+    try {
+      await provider.deleteConnection({ id: "staging" });
+    } finally {
+      restore();
+    }
+
+    const config = vscode.workspace.getConfiguration("dbExplorer");
+    const remainingProfiles = config.get<ConnectionProfile[]>("profiles", []);
+
+    assert.strictEqual(remainingProfiles.length, 1);
+    assert.strictEqual(remainingProfiles[0].id, "local");
+    assert.strictEqual(deletedSecretKey, "dbExplorer.password.staging");
+    assert.strictEqual(infoMessage, "Deleted connection Staging.");
+  });
+
+  it("disconnects before deleting the active connection", async () => {
+    const profiles: ConnectionProfile[] = [
+      {
+        id: "local",
+        label: "Local Postgres",
+        host: "localhost",
+        port: 5432,
+        database: "postgres",
+        user: "postgres"
+      }
+    ];
+
+    await setProfiles(profiles);
+
+    const manager = new ConnectionManager(secrets);
+    (manager as unknown as { activeProfileId?: string }).activeProfileId = "local";
+
+    let disconnectCalls = 0;
+    const originalDisconnect = manager.disconnect.bind(manager);
+    (manager as unknown as { disconnect: () => Promise<void> }).disconnect = async () => {
+      disconnectCalls += 1;
+      await originalDisconnect();
+    };
+
+    const provider = new ConnectionsTreeDataProvider(manager);
+
+    const restore = patchWindowMessages({
+      showWarningMessage: async (message: unknown) => {
+        if (typeof message === "string" && message.startsWith("Delete connection ")) {
+          return "Delete Connection";
+        }
+        return undefined;
+      },
+      showInformationMessage: async () => undefined
+    });
+
+    try {
+      await provider.deleteConnection({ id: "local" });
+    } finally {
+      restore();
+    }
+
+    const config = vscode.workspace.getConfiguration("dbExplorer");
+    const remainingProfiles = config.get<ConnectionProfile[]>("profiles", []);
+
+    assert.strictEqual(disconnectCalls, 1);
+    assert.strictEqual(remainingProfiles.length, 0);
+    assert.strictEqual(manager.getActiveProfileId(), undefined);
+  });
 });
 
 describe("SchemaTreeDataProvider contracts", () => {
