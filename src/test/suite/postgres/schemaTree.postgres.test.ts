@@ -84,7 +84,7 @@ describe("SchemaTreeDataProvider", () => {
     assert.strictEqual(readLabel(children[1]), "Connect to load schema");
   });
 
-  it("loads schema, table, and column nodes", async () => {
+  it("loads schema, tables, views, and column nodes", async () => {
     const pool: FakePool = {
       query: async (sql: string, params?: unknown[]) => {
         if (sql.includes("FROM pg_namespace")) {
@@ -94,6 +94,11 @@ describe("SchemaTreeDataProvider", () => {
         if (sql.includes("information_schema.tables")) {
           assert.deepStrictEqual(params, ["public"]);
           return { rows: [{ table_name: "users" }] };
+        }
+
+        if (sql.includes("information_schema.views")) {
+          assert.deepStrictEqual(params, ["public"]);
+          return { rows: [{ table_name: "active_users" }] };
         }
 
         assert.ok(sql.includes("information_schema.columns"));
@@ -117,13 +122,29 @@ describe("SchemaTreeDataProvider", () => {
     assert.strictEqual(readLabel(schemas[0]), "public");
     assert.strictEqual(schemas[0].contextValue, "dbSchema");
 
-    const tables = await provider.getChildren(schemas[0]);
+    const collections = await provider.getChildren(schemas[0]);
+    assert.ok(collections);
+    if (!collections) {
+      throw new Error("Expected schema collection nodes.");
+    }
+    assert.strictEqual(readLabel(collections[0]), "tables");
+    assert.strictEqual(readLabel(collections[1]), "views");
+
+    const tables = await provider.getChildren(collections[0]);
     assert.ok(tables);
     if (!tables) {
       throw new Error("Expected table nodes.");
     }
     assert.strictEqual(readLabel(tables[0]), "users");
     assert.strictEqual(tables[0].contextValue, "dbTable");
+
+    const views = await provider.getChildren(collections[1]);
+    assert.ok(views);
+    if (!views) {
+      throw new Error("Expected view nodes.");
+    }
+    assert.strictEqual(readLabel(views[0]), "active_users");
+    assert.strictEqual(views[0].contextValue, "dbView");
 
     const columns = await provider.getChildren(tables[0]);
     assert.ok(columns);
@@ -183,7 +204,13 @@ describe("SchemaTreeDataProvider", () => {
       throw new Error("Expected schema nodes.");
     }
 
-    const tables = await provider.getChildren(schemas[0]);
+    const collections = await provider.getChildren(schemas[0]);
+    assert.ok(collections);
+    if (!collections) {
+      throw new Error("Expected schema collection nodes.");
+    }
+
+    const tables = await provider.getChildren(collections[0]);
     assert.ok(tables);
     if (!tables) {
       throw new Error("Expected table nodes.");
@@ -213,7 +240,13 @@ describe("SchemaTreeDataProvider", () => {
       throw new Error("Expected schema nodes.");
     }
 
-    const tables = await provider.getChildren(schemas[0]);
+    const collections = await provider.getChildren(schemas[0]);
+    assert.ok(collections);
+    if (!collections) {
+      throw new Error("Expected schema collection nodes.");
+    }
+
+    const tables = await provider.getChildren(collections[0]);
     assert.ok(tables);
     if (!tables) {
       throw new Error("Expected table nodes.");
@@ -262,7 +295,13 @@ describe("SchemaTreeDataProvider", () => {
       throw new Error("Expected schema nodes.");
     }
 
-    const tables = await provider.getChildren(schemas[0]);
+    const collections = await provider.getChildren(schemas[0]);
+    assert.ok(collections);
+    if (!collections) {
+      throw new Error("Expected schema collection nodes.");
+    }
+
+    const tables = await provider.getChildren(collections[0]);
     assert.ok(tables);
     if (!tables) {
       throw new Error("Expected table nodes.");
@@ -292,7 +331,13 @@ describe("SchemaTreeDataProvider", () => {
     if (!schemas) {
       throw new Error("Expected schema nodes.");
     }
-    const tables = await provider.getChildren(schemas[0]);
+    const collections = await provider.getChildren(schemas[0]);
+    assert.ok(collections);
+    if (!collections) {
+      throw new Error("Expected schema collection nodes.");
+    }
+
+    const tables = await provider.getChildren(collections[0]);
     assert.ok(tables);
     if (!tables) {
       throw new Error("Expected table nodes.");

@@ -205,6 +205,7 @@ function createFakeSession(options: {
     schemaProvider: {
       listSchemas: async () => [],
       listTables: async () => [],
+      listViews: async () => [],
       listColumns: async () => [],
       dropSchema: async () => {},
       dropTable: async () => {},

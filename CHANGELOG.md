@@ -8,6 +8,8 @@
 - Add `Drop Schema` context menu command for schema nodes
 - Add `Delete Connection` context menu command for DB connection nodes
 - Add `Update Stored Password` context menu command for DB connection nodes
+- Group schema children under `tables` and `views` nodes in the DB Schema Tree
+- Show views in DB Schema Tree
 
 ## 0.0.3
 

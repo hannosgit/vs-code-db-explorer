@@ -367,6 +367,7 @@ describe("SchemaTreeDataProvider contracts", () => {
   function createSchemaProvider(overrides: {
     listSchemas?: () => Promise<{ name: string }[]>;
     listTables?: (schemaName: string) => Promise<{ schemaName: string; name: string }[]>;
+    listViews?: (schemaName: string) => Promise<{ schemaName: string; name: string }[]>;
     listColumns?: (table: TableReference) => Promise<{
       schemaName: string;
       tableName: string;
@@ -381,6 +382,7 @@ describe("SchemaTreeDataProvider contracts", () => {
     return {
       listSchemas: overrides.listSchemas ?? (async () => []),
       listTables: overrides.listTables ?? (async () => []),
+      listViews: overrides.listViews ?? (async () => []),
       listColumns: overrides.listColumns ?? (async () => []),
       dropSchema: overrides.dropSchema ?? (async () => {}),
       dropTable: overrides.dropTable ?? (async () => {}),
@@ -402,11 +404,12 @@ describe("SchemaTreeDataProvider contracts", () => {
     assert.strictEqual(readLabel(children[1]), "Connect to load schema");
   });
 
-  it("loads schema, table, and column nodes from SchemaProvider", async () => {
+  it("loads schema, tables, views, and column nodes from SchemaProvider", async () => {
     const provider = createProviderWithSession(
       createSchemaProvider({
         listSchemas: async () => [{ name: "public" }],
         listTables: async () => [{ schemaName: "public", name: "users" }],
+        listViews: async () => [{ schemaName: "public", name: "active_users" }],
         listColumns: async () => [
           {
             schemaName: "public",
@@ -433,12 +436,28 @@ describe("SchemaTreeDataProvider contracts", () => {
     }
     assert.strictEqual(readLabel(schemas[0]), "public");
 
-    const tables = await provider.getChildren(schemas[0]);
+    const collections = await provider.getChildren(schemas[0]);
+    assert.ok(collections);
+    if (!collections) {
+      throw new Error("Expected schema collection nodes.");
+    }
+    assert.strictEqual(readLabel(collections[0]), "tables");
+    assert.strictEqual(readLabel(collections[1]), "views");
+
+    const tables = await provider.getChildren(collections[0]);
     assert.ok(tables);
     if (!tables) {
       throw new Error("Expected table nodes.");
     }
     assert.strictEqual(readLabel(tables[0]), "users");
+
+    const views = await provider.getChildren(collections[1]);
+    assert.ok(views);
+    if (!views) {
+      throw new Error("Expected view nodes.");
+    }
+    assert.strictEqual(readLabel(views[0]), "active_users");
+    assert.strictEqual(views[0].contextValue, "dbView");
 
     const columns = await provider.getChildren(tables[0]);
     assert.ok(columns);

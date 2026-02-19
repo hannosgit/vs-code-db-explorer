@@ -3,7 +3,8 @@ import {
   SchemaDescriptor,
   SchemaProvider,
   TableDescriptor,
-  TableReference
+  TableReference,
+  ViewDescriptor
 } from "../contracts";
 import { PostgresConnectionDriver } from "./postgresConnectionDriver";
 import { PostgresDialect } from "./postgresDialect";
@@ -44,6 +45,21 @@ export class PostgresSchemaProvider implements SchemaProvider {
         return [];
       }
       return [{ schemaName, name: tableName }];
+    });
+  }
+
+  async listViews(schemaName: string): Promise<ViewDescriptor[]> {
+    const result = await this.driver.query<QueryResultLike>(
+      "SELECT table_name FROM information_schema.views WHERE table_schema = $1 ORDER BY table_name",
+      [schemaName]
+    );
+
+    return this.toRows(result).flatMap((row) => {
+      const viewName = row.table_name;
+      if (typeof viewName !== "string") {
+        return [];
+      }
+      return [{ schemaName, name: viewName }];
     });
   }
 

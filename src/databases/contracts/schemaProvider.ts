@@ -12,6 +12,11 @@ export interface TableDescriptor {
   name: string;
 }
 
+export interface ViewDescriptor {
+  schemaName: string;
+  name: string;
+}
+
 export interface ColumnDescriptor {
   schemaName: string;
   tableName: string;
@@ -23,6 +28,7 @@ export interface ColumnDescriptor {
 export interface SchemaProvider {
   listSchemas(): Promise<SchemaDescriptor[]>;
   listTables(schemaName: string): Promise<TableDescriptor[]>;
+  listViews(schemaName: string): Promise<ViewDescriptor[]>;
   listColumns(table: TableReference): Promise<ColumnDescriptor[]>;
   dropSchema(schemaName: string): Promise<void>;
   dropTable(table: TableReference): Promise<void>;

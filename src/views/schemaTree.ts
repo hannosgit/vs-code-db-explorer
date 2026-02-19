@@ -4,6 +4,8 @@ import { SchemaProvider } from "../databases/contracts";
 import { PostgresConnectionDriver } from "../databases/postgres/postgresConnectionDriver";
 import { PostgresSchemaProvider } from "../databases/postgres/postgresSchemaProvider";
 
+type SchemaCollectionKind = "tables" | "views";
+
 class SchemaPlaceholderItem extends vscode.TreeItem {
   constructor(label: string, description?: string) {
     super(label, vscode.TreeItemCollapsibleState.None);
@@ -34,6 +36,17 @@ class SchemaItem extends vscode.TreeItem {
   }
 }
 
+class SchemaCollectionItem extends vscode.TreeItem {
+  constructor(
+    public readonly schemaName: string,
+    public readonly kind: SchemaCollectionKind
+  ) {
+    super(kind, vscode.TreeItemCollapsibleState.Collapsed);
+    this.contextValue = "dbSchemaCollection";
+    this.iconPath = new vscode.ThemeIcon(kind === "tables" ? "table" : "eye");
+  }
+}
+
 class TableItem extends vscode.TreeItem {
   constructor(
     public readonly schemaName: string,
@@ -42,6 +55,17 @@ class TableItem extends vscode.TreeItem {
     super(tableName, vscode.TreeItemCollapsibleState.Collapsed);
     this.contextValue = "dbTable";
     this.iconPath = new vscode.ThemeIcon("table");
+  }
+}
+
+class ViewItem extends vscode.TreeItem {
+  constructor(
+    public readonly schemaName: string,
+    public readonly viewName: string
+  ) {
+    super(viewName, vscode.TreeItemCollapsibleState.Collapsed);
+    this.contextValue = "dbView";
+    this.iconPath = new vscode.ThemeIcon("eye");
   }
 }
 
@@ -61,7 +85,14 @@ class ColumnItem extends vscode.TreeItem {
   }
 }
 
-type SchemaNode = SchemaPlaceholderItem | SchemaErrorItem | SchemaItem | TableItem | ColumnItem;
+type SchemaNode =
+  | SchemaPlaceholderItem
+  | SchemaErrorItem
+  | SchemaItem
+  | SchemaCollectionItem
+  | TableItem
+  | ViewItem
+  | ColumnItem;
 
 interface TableContext {
   schemaName: string;
@@ -200,11 +231,22 @@ export class SchemaTreeDataProvider implements vscode.TreeDataProvider<SchemaNod
     }
 
     if (element instanceof SchemaItem) {
-      return this.getTables(element.schemaName);
+      return this.getSchemaCollections(element.schemaName);
+    }
+
+    if (element instanceof SchemaCollectionItem) {
+      if (element.kind === "tables") {
+        return this.getTables(element.schemaName);
+      }
+      return this.getViews(element.schemaName);
     }
 
     if (element instanceof TableItem) {
       return this.getColumns(element.schemaName, element.tableName);
+    }
+
+    if (element instanceof ViewItem) {
+      return this.getColumns(element.schemaName, element.viewName);
     }
 
     return [];
@@ -244,6 +286,13 @@ export class SchemaTreeDataProvider implements vscode.TreeDataProvider<SchemaNod
     }
   }
 
+  private getSchemaCollections(schemaName: string): SchemaNode[] {
+    return [
+      new SchemaCollectionItem(schemaName, "tables"),
+      new SchemaCollectionItem(schemaName, "views")
+    ];
+  }
+
   private async getTables(schemaName: string): Promise<SchemaNode[]> {
     const schemaProviderOrPlaceholder = this.getSchemaProviderOrPlaceholder();
     if (Array.isArray(schemaProviderOrPlaceholder)) {
@@ -258,6 +307,23 @@ export class SchemaTreeDataProvider implements vscode.TreeDataProvider<SchemaNod
       return tables.map((table) => new TableItem(table.schemaName, table.name));
     } catch (error) {
       return [this.toErrorItem(`Failed to load tables for ${schemaName}`, error)];
+    }
+  }
+
+  private async getViews(schemaName: string): Promise<SchemaNode[]> {
+    const schemaProviderOrPlaceholder = this.getSchemaProviderOrPlaceholder();
+    if (Array.isArray(schemaProviderOrPlaceholder)) {
+      return schemaProviderOrPlaceholder;
+    }
+
+    try {
+      const views = await schemaProviderOrPlaceholder.listViews(schemaName);
+      if (views.length === 0) {
+        return [new SchemaPlaceholderItem("No views found")];
+      }
+      return views.map((view) => new ViewItem(view.schemaName, view.name));
+    } catch (error) {
+      return [this.toErrorItem(`Failed to load views for ${schemaName}`, error)];
     }
   }
 
@@ -322,8 +388,18 @@ export class SchemaTreeDataProvider implements vscode.TreeDataProvider<SchemaNod
       return undefined;
     }
 
-    const maybe = value as { schemaName?: unknown; tableName?: unknown };
-    if (typeof maybe.schemaName !== "string" || typeof maybe.tableName === "string") {
+    const maybe = value as {
+      schemaName?: unknown;
+      tableName?: unknown;
+      viewName?: unknown;
+      kind?: unknown;
+    };
+    if (
+      typeof maybe.schemaName !== "string" ||
+      typeof maybe.tableName === "string" ||
+      typeof maybe.viewName === "string" ||
+      typeof maybe.kind === "string"
+    ) {
       return undefined;
     }
 
