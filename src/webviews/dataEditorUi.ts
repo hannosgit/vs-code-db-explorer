@@ -5,6 +5,7 @@ interface EditorRow {
 
 interface DataEditorState {
   columns: string[];
+  columnTypes?: string[];
   columnEnumValues?: string[][];
   sortColumn?: string;
   sortDirection?: "asc" | "desc";
@@ -46,6 +47,8 @@ interface WorkingEditorRow extends EditorRow {
   isNew: boolean;
   isDeleted: boolean;
 }
+
+type BooleanCellValue = "unset" | "null" | "true" | "false";
 
 function readState(documentObject: any): DataEditorState | undefined {
   const stateElement = documentObject.getElementById("initial-state");
@@ -216,6 +219,84 @@ function readState(documentObject: any): DataEditorState | undefined {
     return values.filter((value: unknown) => typeof value === "string");
   }
 
+  function isBooleanColumn(columnIndex: number): boolean {
+    if (!Array.isArray(state.columnTypes)) {
+      return false;
+    }
+
+    const typeName = state.columnTypes[columnIndex];
+    if (typeof typeName !== "string") {
+      return false;
+    }
+
+    const normalizedType = typeName.trim().toLowerCase();
+    return normalizedType === "boolean" || normalizedType === "bool";
+  }
+
+  function readBooleanCellValue(
+    value: string,
+    isNull: boolean,
+    allowUnset: boolean
+  ): BooleanCellValue {
+    if (isNull) {
+      return "null";
+    }
+
+    const normalizedValue = value.trim().toLowerCase();
+    if (normalizedValue === "true") {
+      return "true";
+    }
+    if (normalizedValue === "false") {
+      return "false";
+    }
+    if (allowUnset && normalizedValue.length === 0) {
+      return "unset";
+    }
+
+    return "false";
+  }
+
+  function writeBooleanCellValue(
+    row: WorkingEditorRow,
+    columnIndex: number,
+    value: BooleanCellValue
+  ): void {
+    if (value === "unset") {
+      row.values[columnIndex] = "";
+      row.nulls[columnIndex] = false;
+      return;
+    }
+
+    if (value === "null") {
+      row.values[columnIndex] = "";
+      row.nulls[columnIndex] = true;
+      return;
+    }
+
+    row.values[columnIndex] = value;
+    row.nulls[columnIndex] = false;
+  }
+
+  function nextBooleanCellValue(value: BooleanCellValue): BooleanCellValue {
+    if (value === "unset" || value === "null") {
+      return "false";
+    }
+    if (value === "false") {
+      return "true";
+    }
+    return "null";
+  }
+
+  function booleanCellLabel(value: BooleanCellValue): string {
+    if (value === "unset") {
+      return "(unset)";
+    }
+    if (value === "null") {
+      return "NULL";
+    }
+    return value.toUpperCase();
+  }
+
   function renderTable(focusRowIndex?: number): void {
     const table = documentObject.getElementById("data-table");
     if (!table) {
@@ -283,6 +364,75 @@ function readState(documentObject: any): DataEditorState | undefined {
 
       state.columns.forEach((_: string, columnIndex: number) => {
         const td = documentObject.createElement("td");
+        if (isBooleanColumn(columnIndex)) {
+          const checkbox = documentObject.createElement("input");
+          checkbox.type = "checkbox";
+          checkbox.dataset.row = String(rowIndex);
+          checkbox.dataset.column = String(columnIndex);
+          checkbox.disabled = row.isDeleted;
+
+          const statusLabel = documentObject.createElement("span");
+          statusLabel.classList.add("boolean-state");
+
+          const editor = documentObject.createElement("div");
+          editor.classList.add("boolean-editor");
+          editor.appendChild(checkbox);
+          editor.appendChild(statusLabel);
+
+          let currentValue = readBooleanCellValue(
+            row.values[columnIndex] ?? "",
+            row.nulls[columnIndex] === true,
+            row.isNew
+          );
+
+          const updateBooleanEditor = () => {
+            const isNull = currentValue === "null";
+            const isChecked = currentValue === "true";
+            const isDirty = isCellDirty(rowIndex, columnIndex);
+            checkbox.checked = isChecked;
+            checkbox.indeterminate = isNull;
+            checkbox.setAttribute("aria-checked", isNull ? "mixed" : isChecked ? "true" : "false");
+            checkbox.classList.toggle("dirty", isDirty);
+            checkbox.classList.toggle("is-null", isNull);
+            editor.classList.toggle("dirty", isDirty);
+            editor.classList.toggle("is-null", isNull);
+            statusLabel.textContent = booleanCellLabel(currentValue);
+          };
+
+          const toggleBooleanValue = () => {
+            currentValue = nextBooleanCellValue(currentValue);
+            writeBooleanCellValue(row, columnIndex, currentValue);
+            updateBooleanEditor();
+            updateDirtyState();
+          };
+
+          updateBooleanEditor();
+
+          checkbox.addEventListener("pointerdown", (event: Event) => {
+            event.preventDefault();
+            checkbox.focus();
+            toggleBooleanValue();
+          });
+
+          checkbox.addEventListener("keydown", (event: Event) => {
+            const key = (event as { key?: string }).key;
+            if (key !== " " && key !== "Enter") {
+              return;
+            }
+            event.preventDefault();
+            toggleBooleanValue();
+          });
+
+          checkbox.addEventListener("click", (event: Event) => {
+            event.preventDefault();
+          });
+
+          cellControls.push(checkbox);
+          td.appendChild(editor);
+          tr.appendChild(td);
+          return;
+        }
+
         const enumValues = row.isNew ? enumValuesForColumn(columnIndex) : [];
         if (enumValues.length > 0) {
           const select = documentObject.createElement("select");

@@ -4,6 +4,8 @@
 
 ### Enchancements
 
+- Add tri-state boolean editing in the Data Editor with a checkbox control for FALSE, TRUE, and NULL values
+
 ## 0.0.3
 
 ### Enchancements

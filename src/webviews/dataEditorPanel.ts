@@ -342,7 +342,7 @@ function buildHtml(
       padding: 2px 8px;
       font-size: 11px;
     }
-    td input,
+    td input:not([type="checkbox"]),
     td select {
       width: 100%;
       box-sizing: border-box;
@@ -352,18 +352,48 @@ function buildHtml(
       padding: 6px 8px;
       font: inherit;
     }
-    td input:focus,
+    td input:not([type="checkbox"]):focus,
     td select:focus {
       outline: 1px solid var(--vscode-focusBorder);
       outline-offset: -1px;
     }
-    td input.is-null,
+    td input:not([type="checkbox"]).is-null,
     td select.is-null {
       color: var(--vscode-descriptionForeground);
       font-style: italic;
     }
-    td input.dirty,
+    td input:not([type="checkbox"]).dirty,
     td select.dirty {
+      background: var(--vscode-editor-wordHighlightBackground);
+    }
+    td .boolean-editor {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 6px 8px;
+      min-height: 28px;
+      box-sizing: border-box;
+    }
+    td .boolean-editor input[type="checkbox"] {
+      width: 13px;
+      height: 13px;
+      margin: 0;
+      flex: 0 0 auto;
+    }
+    td .boolean-editor input[type="checkbox"]:focus {
+      outline: 1px solid var(--vscode-focusBorder);
+      outline-offset: 2px;
+    }
+    td .boolean-editor .boolean-state {
+      font-size: 11px;
+      color: var(--vscode-editor-foreground);
+      white-space: nowrap;
+    }
+    td .boolean-editor.is-null .boolean-state {
+      color: var(--vscode-descriptionForeground);
+      font-style: italic;
+    }
+    td .boolean-editor.dirty {
       background: var(--vscode-editor-wordHighlightBackground);
     }
     tr.new-row td {
@@ -402,7 +432,7 @@ function buildHtml(
       </div>
     </div>
   </header>
-  <div class="note">Tip: click a column header to sort, use <strong>Add row</strong> to insert, <strong>Delete</strong> to remove rows, and type <strong>NULL</strong> to set a value to NULL.</div>
+  <div class="note">Tip: click a column header to sort, use <strong>Add row</strong> to insert, <strong>Delete</strong> to remove rows, type <strong>NULL</strong> to set a value to NULL, and use the boolean checkbox to cycle <strong>FALSE</strong>, <strong>TRUE</strong>, and <strong>NULL</strong>.</div>
   ${body}
   <textarea id="initial-state" hidden>${safeState}</textarea>
   <script src="${scriptUri}" defer></script>
