@@ -206,6 +206,7 @@ function createFakeSession(options: {
       listSchemas: async () => [],
       listTables: async () => [],
       listColumns: async () => [],
+      dropSchema: async () => {},
       dropTable: async () => {},
       truncateTable: async () => {}
     },

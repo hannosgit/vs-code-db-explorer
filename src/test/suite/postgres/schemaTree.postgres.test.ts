@@ -307,6 +307,45 @@ describe("SchemaTreeDataProvider", () => {
     assert.strictEqual(columns[0].description, "Unknown error");
   });
 
+  it("drops confirmed schemas using quoted identifiers", async () => {
+    let executedSql = "";
+    let infoMessage = "";
+    const provider = createProviderWithPool({
+      query: async (sql: string) => {
+        executedSql = sql;
+        return { rows: [] };
+      }
+    });
+
+    let refreshCount = 0;
+    (provider as unknown as { refresh: () => void }).refresh = () => {
+      refreshCount += 1;
+    };
+
+    const restore = patchWindowMessages({
+      showWarningMessage: async (message: unknown) => {
+        if (typeof message === "string" && message.startsWith("Drop schema ")) {
+          return "Drop Schema";
+        }
+        return undefined;
+      },
+      showInformationMessage: async (message: unknown) => {
+        infoMessage = String(message);
+        return undefined;
+      }
+    });
+
+    try {
+      await provider.dropSchema({ schemaName: 'pub"lic' });
+    } finally {
+      restore();
+    }
+
+    assert.strictEqual(executedSql, 'DROP SCHEMA "pub""lic" CASCADE');
+    assert.strictEqual(infoMessage, 'Dropped schema pub"lic.');
+    assert.strictEqual(refreshCount, 1);
+  });
+
   it("drops confirmed tables using quoted identifiers", async () => {
     let executedSql = "";
     let infoMessage = "";

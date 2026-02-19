@@ -58,6 +58,11 @@
         "category": "DB Explorer"
       },
       {
+        "command": "dbExplorer.dropSchema",
+        "title": "Drop Schema",
+        "category": "DB Explorer"
+      },
+      {
         "command": "dbExplorer.dropTable",
         "title": "Drop Table",
         "category": "DB Explorer"
@@ -110,6 +115,11 @@
           "command": "dbExplorer.refreshSchema",
           "when": "view == dbSchema && viewItem == dbSchema",
           "group": "navigation@5"
+        },
+        {
+          "command": "dbExplorer.dropSchema",
+          "when": "view == dbSchema && viewItem == dbSchema",
+          "group": "navigation@20"
         },
         {
           "command": "dbExplorer.openTable",

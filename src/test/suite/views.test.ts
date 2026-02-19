@@ -185,6 +185,7 @@ describe("SchemaTreeDataProvider contracts", () => {
       dataType: string;
       isNullable: boolean;
     }[]>;
+    dropSchema?: (schemaName: string) => Promise<void>;
     dropTable?: (table: TableReference) => Promise<void>;
     truncateTable?: (table: TableReference) => Promise<void>;
   } = {}): SchemaProvider {
@@ -192,6 +193,7 @@ describe("SchemaTreeDataProvider contracts", () => {
       listSchemas: overrides.listSchemas ?? (async () => []),
       listTables: overrides.listTables ?? (async () => []),
       listColumns: overrides.listColumns ?? (async () => []),
+      dropSchema: overrides.dropSchema ?? (async () => {}),
       dropTable: overrides.dropTable ?? (async () => {}),
       truncateTable: overrides.truncateTable ?? (async () => {})
     };
@@ -278,6 +280,46 @@ describe("SchemaTreeDataProvider contracts", () => {
     assert.strictEqual(readLabel(children[0]), "Failed to load schemas");
     assert.strictEqual(children[0].description, "schema failed");
     assert.strictEqual(children[0].contextValue, "dbSchemaError");
+  });
+
+  it("drops confirmed schemas via SchemaProvider", async () => {
+    let droppedSchema: string | undefined;
+    const provider = createProviderWithSession(
+      createSchemaProvider({
+        dropSchema: async (schemaName) => {
+          droppedSchema = schemaName;
+        }
+      })
+    );
+
+    let refreshCount = 0;
+    (provider as unknown as { refresh: () => void }).refresh = () => {
+      refreshCount += 1;
+    };
+
+    let infoMessage = "";
+    const restore = patchWindowMessages({
+      showWarningMessage: async (message: unknown) => {
+        if (typeof message === "string" && message.startsWith("Drop schema ")) {
+          return "Drop Schema";
+        }
+        return undefined;
+      },
+      showInformationMessage: async (message: unknown) => {
+        infoMessage = String(message);
+        return undefined;
+      }
+    });
+
+    try {
+      await provider.dropSchema({ schemaName: "public" });
+    } finally {
+      restore();
+    }
+
+    assert.strictEqual(droppedSchema, "public");
+    assert.strictEqual(infoMessage, "Dropped schema public.");
+    assert.strictEqual(refreshCount, 1);
   });
 
   it("drops confirmed tables via SchemaProvider", async () => {

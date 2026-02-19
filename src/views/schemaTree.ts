@@ -68,6 +68,10 @@ interface TableContext {
   tableName: string;
 }
 
+interface SchemaContext {
+  schemaName: string;
+}
+
 export class SchemaTreeDataProvider implements vscode.TreeDataProvider<SchemaNode> {
   private readonly onDidChangeTreeDataEmitter = new vscode.EventEmitter<SchemaNode | undefined>();
   readonly onDidChangeTreeData = this.onDidChangeTreeDataEmitter.event;
@@ -78,6 +82,44 @@ export class SchemaTreeDataProvider implements vscode.TreeDataProvider<SchemaNod
 
   refresh(): void {
     this.onDidChangeTreeDataEmitter.fire(undefined);
+  }
+
+  async dropSchema(item?: unknown): Promise<void> {
+    const schema = this.toSchemaContext(item);
+    if (!schema) {
+      void vscode.window.showWarningMessage("Select a schema in the DB Schema view.");
+      return;
+    }
+
+    const action = await vscode.window.showWarningMessage(
+      `Drop schema ${schema.schemaName}?`,
+      {
+        modal: true,
+        detail: "All objects in this schema will be dropped and this action cannot be undone."
+      },
+      "Drop Schema"
+    );
+
+    if (action !== "Drop Schema") {
+      return;
+    }
+
+    const schemaProviderOrPlaceholder = this.getSchemaProviderOrPlaceholder();
+    if (Array.isArray(schemaProviderOrPlaceholder)) {
+      void vscode.window.showWarningMessage("Connect to a DB profile first.");
+      return;
+    }
+
+    try {
+      await schemaProviderOrPlaceholder.dropSchema(schema.schemaName);
+      this.refresh();
+      void vscode.window.showInformationMessage(`Dropped schema ${schema.schemaName}.`);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Unknown error";
+      void vscode.window.showErrorMessage(
+        `Failed to drop schema ${schema.schemaName}: ${message}`
+      );
+    }
   }
 
   async dropTable(item?: unknown): Promise<void> {
@@ -266,6 +308,27 @@ export class SchemaTreeDataProvider implements vscode.TreeDataProvider<SchemaNod
     return {
       schemaName: maybe.schemaName,
       tableName: maybe.tableName
+    };
+  }
+
+  private toSchemaContext(value: unknown): SchemaContext | undefined {
+    if (value instanceof SchemaItem) {
+      return {
+        schemaName: value.schemaName
+      };
+    }
+
+    if (!value || typeof value !== "object") {
+      return undefined;
+    }
+
+    const maybe = value as { schemaName?: unknown; tableName?: unknown };
+    if (typeof maybe.schemaName !== "string" || typeof maybe.tableName === "string") {
+      return undefined;
+    }
+
+    return {
+      schemaName: maybe.schemaName
     };
   }
 }

@@ -24,6 +24,7 @@ export interface SchemaProvider {
   listSchemas(): Promise<SchemaDescriptor[]>;
   listTables(schemaName: string): Promise<TableDescriptor[]>;
   listColumns(table: TableReference): Promise<ColumnDescriptor[]>;
+  dropSchema(schemaName: string): Promise<void>;
   dropTable(table: TableReference): Promise<void>;
   truncateTable(table: TableReference): Promise<void>;
 }

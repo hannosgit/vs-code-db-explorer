@@ -25,6 +25,7 @@ describe("DatabaseAdapterRegistry", () => {
             listSchemas: async () => [],
             listTables: async () => [],
             listColumns: async () => [],
+            dropSchema: async () => {},
             dropTable: async () => {},
             truncateTable: async () => {}
           },

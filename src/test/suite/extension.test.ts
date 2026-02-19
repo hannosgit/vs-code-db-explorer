@@ -33,6 +33,7 @@ describe("DB Explorer extension", () => {
       "dbExplorer.runQuery",
       "dbExplorer.runAllStatements",
       "dbExplorer.openTable",
+      "dbExplorer.dropSchema",
       "dbExplorer.dropTable",
       "dbExplorer.truncateTable",
       "dbExplorer.clearPassword"

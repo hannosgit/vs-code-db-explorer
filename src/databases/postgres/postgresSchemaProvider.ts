@@ -77,6 +77,11 @@ export class PostgresSchemaProvider implements SchemaProvider {
     });
   }
 
+  async dropSchema(schemaName: string): Promise<void> {
+    const qualifiedName = this.dialect.quoteIdentifier(schemaName);
+    await this.driver.query(`DROP SCHEMA ${qualifiedName} CASCADE`);
+  }
+
   async dropTable(table: TableReference): Promise<void> {
     const qualifiedName = `${this.dialect.quoteIdentifier(table.schemaName)}.${this.dialect.quoteIdentifier(
       table.tableName
