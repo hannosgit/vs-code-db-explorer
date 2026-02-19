@@ -13,6 +13,7 @@ coverage/**
 
 # Repository metadata not needed at runtime
 .gitignore
+.ignore/**
 AGENTS.md
 specs.md
 tsconfig.json
