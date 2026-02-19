@@ -149,6 +149,9 @@ export function activate(context: vscode.ExtensionContext): void {
       await connectionsProvider.deleteConnection(item);
       schemaProvider.refresh();
     }),
+    vscode.commands.registerCommand("dbExplorer.updatePassword", async (item?: unknown) => {
+      await connectionsProvider.updateConnectionPassword(item);
+    }),
     vscode.commands.registerCommand("dbExplorer.connect", async () => {
       const profiles = connectionManager.listProfiles();
       if (profiles.length === 0) {

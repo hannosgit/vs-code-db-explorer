@@ -37,6 +37,7 @@ describe("DB Explorer extension", () => {
       "dbExplorer.dropSchema",
       "dbExplorer.dropTable",
       "dbExplorer.truncateTable",
+      "dbExplorer.updatePassword",
       "dbExplorer.clearPassword"
     ];
 

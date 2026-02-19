@@ -78,6 +78,11 @@
         "category": "DB Explorer"
       },
       {
+        "command": "dbExplorer.updatePassword",
+        "title": "Update Stored Password",
+        "category": "DB Explorer"
+      },
+      {
         "command": "dbExplorer.clearPassword",
         "title": "Clear Stored Password",
         "category": "DB Explorer"
@@ -116,6 +121,11 @@
         }
       ],
       "view/item/context": [
+        {
+          "command": "dbExplorer.updatePassword",
+          "when": "view == dbConnections && viewItem == dbConnection",
+          "group": "navigation@19"
+        },
         {
           "command": "dbExplorer.deleteConnection",
           "when": "view == dbConnections && viewItem == dbConnection",

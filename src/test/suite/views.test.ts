@@ -64,6 +64,21 @@ function patchWindowMessages(stubs: {
   };
 }
 
+function patchWindowInputBox(
+  showInputBox: (...args: unknown[]) => Thenable<string | undefined>
+): () => void {
+  const windowApi = vscode.window as unknown as {
+    showInputBox: (...args: unknown[]) => Thenable<string | undefined>;
+  };
+
+  const originalInputBox = windowApi.showInputBox;
+  windowApi.showInputBox = showInputBox;
+
+  return () => {
+    windowApi.showInputBox = originalInputBox;
+  };
+}
+
 function createProviderWithSession(schemaProvider?: SchemaProvider): SchemaTreeDataProvider {
   const manager = {
     onDidChangeActive: () => ({ dispose: () => {} }),
@@ -286,6 +301,65 @@ describe("ConnectionsTreeDataProvider", () => {
     assert.strictEqual(disconnectCalls, 1);
     assert.strictEqual(remainingProfiles.length, 0);
     assert.strictEqual(manager.getActiveProfileId(), undefined);
+  });
+
+  it("updates stored password for selected connection profiles", async () => {
+    const profiles: ConnectionProfile[] = [
+      {
+        id: "local",
+        label: "Local Postgres",
+        host: "localhost",
+        port: 5432,
+        database: "postgres",
+        user: "postgres"
+      },
+      {
+        id: "staging",
+        label: "Staging",
+        host: "db.example",
+        port: 5432,
+        database: "app",
+        user: "app_user"
+      }
+    ];
+
+    await setProfiles(profiles);
+
+    let storedSecretKey: string | undefined;
+    let storedSecretValue: string | undefined;
+    const emitter = new vscode.EventEmitter<vscode.SecretStorageChangeEvent>();
+    const trackedSecrets = {
+      onDidChange: emitter.event,
+      get: async () => undefined,
+      store: async (key: string, value: string) => {
+        storedSecretKey = key;
+        storedSecretValue = value;
+      },
+      delete: async () => {}
+    } as unknown as vscode.SecretStorage;
+
+    const manager = new ConnectionManager(trackedSecrets);
+    const provider = new ConnectionsTreeDataProvider(manager);
+
+    let infoMessage = "";
+    const restoreMessages = patchWindowMessages({
+      showInformationMessage: async (message: unknown) => {
+        infoMessage = String(message);
+        return undefined;
+      }
+    });
+    const restoreInputBox = patchWindowInputBox(async () => "new-secret");
+
+    try {
+      await provider.updateConnectionPassword({ id: "staging" });
+    } finally {
+      restoreInputBox();
+      restoreMessages();
+    }
+
+    assert.strictEqual(storedSecretKey, "dbExplorer.password.staging");
+    assert.strictEqual(storedSecretValue, "new-secret");
+    assert.strictEqual(infoMessage, "Updated stored password for Staging.");
   });
 });
 

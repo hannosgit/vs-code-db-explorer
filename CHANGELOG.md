@@ -7,6 +7,7 @@
 - Add tri-state boolean editing in the Data Editor with a checkbox control for FALSE, TRUE, and NULL values
 - Add `Drop Schema` context menu command for schema nodes
 - Add `Delete Connection` context menu command for DB connection nodes
+- Add `Update Stored Password` context menu command for DB connection nodes
 
 ## 0.0.3
 

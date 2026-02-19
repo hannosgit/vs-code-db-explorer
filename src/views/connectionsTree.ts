@@ -94,6 +94,43 @@ export class ConnectionsTreeDataProvider implements vscode.TreeDataProvider<vsco
     }
   }
 
+  async updateConnectionPassword(item?: unknown): Promise<void> {
+    const profiles = this.connectionManager.listProfiles();
+    if (profiles.length === 0) {
+      void vscode.window.showWarningMessage(
+        "No profiles configured. Run \"DB Explorer: Add Connection\" or edit settings.json."
+      );
+      return;
+    }
+
+    const profile = await this.resolveProfileToUpdatePassword(item, profiles);
+    if (!profile) {
+      return;
+    }
+
+    const password = await vscode.window.showInputBox({
+      prompt: `New password for ${profile.user}@${profile.host}`,
+      password: true,
+      ignoreFocusOut: true
+    });
+
+    if (password === undefined) {
+      return;
+    }
+
+    try {
+      await this.connectionManager.storePassword(profile.id, password);
+      void vscode.window.showInformationMessage(
+        `Updated stored password for ${profile.label}.`
+      );
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Unknown error";
+      void vscode.window.showErrorMessage(
+        `Failed to update password for ${profile.label}: ${message}`
+      );
+    }
+  }
+
   getTreeItem(element: vscode.TreeItem): vscode.TreeItem {
     return element;
   }
@@ -126,6 +163,38 @@ export class ConnectionsTreeDataProvider implements vscode.TreeDataProvider<vsco
           profile
         })),
         { placeHolder: "Select a DB Explorer connection to delete" }
+      );
+
+      return picked?.profile;
+    }
+
+    const profileId = this.toProfileId(item);
+    if (!profileId) {
+      void vscode.window.showWarningMessage("Select a connection in the DB Connections view.");
+      return undefined;
+    }
+
+    const profile = profiles.find((candidate) => candidate.id === profileId);
+    if (!profile) {
+      void vscode.window.showWarningMessage(`Connection profile "${profileId}" not found.`);
+      return undefined;
+    }
+
+    return profile;
+  }
+
+  private async resolveProfileToUpdatePassword(
+    item: unknown,
+    profiles: ConnectionProfile[]
+  ): Promise<ConnectionProfile | undefined> {
+    if (item === undefined) {
+      const picked = await vscode.window.showQuickPick(
+        profiles.map((profile) => ({
+          label: profile.label,
+          description: `${profile.user}@${profile.host}:${profile.port}/${profile.database}`,
+          profile
+        })),
+        { placeHolder: "Select a DB Explorer connection to update stored password" }
       );
 
       return picked?.profile;
