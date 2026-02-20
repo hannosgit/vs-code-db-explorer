@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.0.5
+
+- Add an `Export CSV` action in the Data Editor to download the current page data
+
+### Enchancements
+
 ## 0.0.4
 
 ### Enchancements

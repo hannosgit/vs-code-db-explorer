@@ -4,6 +4,8 @@ interface EditorRow {
 }
 
 interface DataEditorState {
+  schemaName?: string;
+  tableName?: string;
   columns: string[];
   columnTypes?: string[];
   columnEnumValues?: string[][];
@@ -88,6 +90,7 @@ function readState(documentObject: any): DataEditorState | undefined {
   const refreshButton = documentObject.getElementById("refresh");
   const prevPageButton = documentObject.getElementById("page-prev");
   const nextPageButton = documentObject.getElementById("page-next");
+  const actionsContainer = documentObject.querySelector(".actions");
   const sortButtons = Array.from(documentObject.querySelectorAll("button.column-sort"));
   const cellControls: any[] = [];
   const ENUM_NULL_VALUE = "__db_explorer_enum_null__";
@@ -149,6 +152,93 @@ function readState(documentObject: any): DataEditorState | undefined {
       vscode.postMessage({ command: "sort", columnIndex });
     });
   });
+
+  function createExportCsvButton(): any | undefined {
+    if (!actionsContainer) {
+      return undefined;
+    }
+
+    const button = documentObject.createElement("button");
+    button.id = "export-csv";
+    button.type = "button";
+    button.classList.add("secondary");
+    button.textContent = "Export CSV";
+    button.disabled = state.loading === true || !!state.error || state.columns.length === 0;
+
+    if (refreshButton && refreshButton.parentNode === actionsContainer) {
+      actionsContainer.insertBefore(button, refreshButton);
+    } else {
+      actionsContainer.appendChild(button);
+    }
+
+    return button;
+  }
+
+  function escapeCsvValue(value: string): string {
+    const escapedValue = value.replace(/"/g, "\"\"");
+    if (/[",\r\n]|^\s|\s$/.test(value)) {
+      return `"${escapedValue}"`;
+    }
+    return escapedValue;
+  }
+
+  function buildCsvContent(): string {
+    const headerRow = state.columns.map((column: string) => escapeCsvValue(column)).join(",");
+    const dataRows = workingRows
+      .filter((row: WorkingEditorRow) => !row.isDeleted)
+      .map((row: WorkingEditorRow) =>
+        state.columns
+          .map((_: string, columnIndex: number) => {
+            if (row.nulls[columnIndex] === true) {
+              return "";
+            }
+            return escapeCsvValue(row.values[columnIndex] ?? "");
+          })
+          .join(",")
+      );
+    return [headerRow, ...dataRows].join("\r\n");
+  }
+
+  function sanitizeFilenamePart(value: string | undefined, fallback: string): string {
+    if (typeof value !== "string") {
+      return fallback;
+    }
+
+    const trimmed = value.trim();
+    if (!trimmed) {
+      return fallback;
+    }
+
+    const safeValue = trimmed.replace(/[^a-z0-9._-]+/gi, "_").replace(/^_+|_+$/g, "");
+    return safeValue || fallback;
+  }
+
+  function buildExportFilename(): string {
+    const schemaName = sanitizeFilenamePart(state.schemaName, "schema");
+    const tableName = sanitizeFilenamePart(state.tableName, "table");
+    const pageNumber =
+      Number.isInteger(state.pageNumber) && state.pageNumber > 0 ? state.pageNumber : 1;
+    return `${schemaName}_${tableName}_page_${pageNumber}.csv`;
+  }
+
+  function exportCurrentRowsAsCsv(): void {
+    if (state.columns.length === 0) {
+      return;
+    }
+
+    vscode.postMessage({
+      command: "exportCsv",
+      content: buildCsvContent(),
+      fileName: buildExportFilename()
+    });
+  }
+
+  const exportCsvButton = createExportCsvButton();
+  if (exportCsvButton) {
+    exportCsvButton.addEventListener("click", () => {
+      exportCurrentRowsAsCsv();
+    });
+  }
 
   function createEmptyRow(): WorkingEditorRow {
     return {

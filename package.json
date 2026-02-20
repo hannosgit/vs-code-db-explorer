@@ -6,7 +6,7 @@
     "type": "git",
     "url": "https://github.com/hannosgit/vs-code-db-explorer"
   },
-  "version": "0.0.4",
+  "version": "0.0.5",
   "publisher": "hannos",
   "icon": "resources/db.png",
   "engines": {
