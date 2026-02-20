@@ -1,4 +1,5 @@
 import * as vscode from "vscode";
+import { exportCsv } from "./csvExport";
 
 export interface EditorRow {
   values: string[];
@@ -137,7 +138,11 @@ export class DataEditorPanel {
         typeof message.content === "string" &&
         typeof message.fileName === "string"
       ) {
-        void this.exportCsv(message.content, message.fileName);
+        void exportCsv({
+          content: message.content,
+          fileName: message.fileName,
+          fallbackFileName: "data-export.csv"
+        });
       }
     });
   }
@@ -158,47 +163,10 @@ export class DataEditorPanel {
     this.sortHandler = handler;
   }
 
-  private async exportCsv(content: string, fileName: string): Promise<void> {
-    const safeFileName = toSafeCsvFileName(fileName);
-    const defaultUri = getDefaultSaveUri(safeFileName);
-    const uri = await vscode.window.showSaveDialog({
-      saveLabel: "Export CSV",
-      filters: { "CSV files": ["csv"] },
-      defaultUri
-    });
-
-    if (!uri) {
-      return;
-    }
-
-    try {
-      await vscode.workspace.fs.writeFile(uri, Buffer.from(content, "utf8"));
-      void vscode.window.showInformationMessage(`CSV exported to ${uri.fsPath || uri.path}`);
-    } catch (error) {
-      const reason = error instanceof Error ? error.message : String(error);
-      void vscode.window.showErrorMessage(`Unable to export CSV: ${reason}`);
-    }
-  }
-
   showState(state: DataEditorState): void {
     this.panel.title = `Data Editor: ${state.schemaName}.${state.tableName}`;
     this.panel.webview.html = buildHtml(this.panel.webview, this.extensionUri, state);
   }
-}
-
-function toSafeCsvFileName(fileName: string): string {
-  const trimmed = fileName.trim();
-  const withFallback = trimmed.length > 0 ? trimmed : "data-export.csv";
-  return withFallback.toLowerCase().endsWith(".csv") ? withFallback : `${withFallback}.csv`;
-}
-
-function getDefaultSaveUri(fileName: string): vscode.Uri | undefined {
-  const workspaceFolder = vscode.workspace.workspaceFolders?.[0]?.uri;
-  if (!workspaceFolder) {
-    return undefined;
-  }
-
-  return vscode.Uri.joinPath(workspaceFolder, fileName);
 }
 
 function buildHtml(

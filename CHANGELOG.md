@@ -3,6 +3,7 @@
 ## 0.0.5
 
 - Add an `Export CSV` action in the Data Editor to download the current page data
+- Add an `Export CSV` action in the Results panel for query output
 
 ### Enchancements
 

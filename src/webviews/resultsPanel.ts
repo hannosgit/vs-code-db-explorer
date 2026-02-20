@@ -1,5 +1,6 @@
 import * as vscode from "vscode";
 import { QueryExecutionResult } from "../query/queryRunner";
+import { exportCsv } from "./csvExport";
 
 const RESULTS_PAGE_SIZE = 100;
 
@@ -52,6 +53,18 @@ export class ResultsPanel {
     this.panel.webview.onDidReceiveMessage((message) => {
       if (message?.command === "cancel" && this.cancelHandler) {
         void this.cancelHandler();
+      }
+
+      if (
+        message?.command === "exportCsv" &&
+        typeof message.content === "string" &&
+        typeof message.fileName === "string"
+      ) {
+        void exportCsv({
+          content: message.content,
+          fileName: message.fileName,
+          fallbackFileName: "query-results.csv"
+        });
       }
     });
   }
@@ -293,6 +306,10 @@ function renderTable(result: QueryExecutionResult): string {
     return `<div class="empty">Query completed. Rows affected: ${rowCount}.</div>`;
   }
 
+  const csvRows = result.rows.map((row) => result.columns.map((column) => toCsvCellValue(row[column])));
+  const csvContent = buildCsvContent(result.columns, csvRows);
+  const safeCsvContent = JSON.stringify(csvContent).replace(/</g, "\\u003c");
+  const safeExportFileName = JSON.stringify(buildResultsExportFileName()).replace(/</g, "\\u003c");
   const headerRow = [`<th class="row-number">#</th>`, ...result.columns.map((col) => `<th>${escapeHtml(col)}</th>`)]
     .join("");
   const allRows = result.rows
@@ -310,6 +327,7 @@ function renderTable(result: QueryExecutionResult): string {
         <button id="results-prev" disabled>Previous</button>
         <span id="results-page-info"></span>
         <button id="results-next"${allRows.length > RESULTS_PAGE_SIZE ? "" : " disabled"}>Next</button>
+        <button id="results-export">Export CSV</button>
       </div>
       <table>
         <thead>
@@ -328,10 +346,13 @@ function renderTable(result: QueryExecutionResult): string {
 
         const prevButton = document.getElementById("results-prev");
         const nextButton = document.getElementById("results-next");
+        const exportButton = document.getElementById("results-export");
         const pageInfo = document.getElementById("results-page-info");
         const tbody = document.getElementById("results-body");
+        const csvContent = ${safeCsvContent};
+        const exportFileName = ${safeExportFileName};
 
-        if (!prevButton || !nextButton || !pageInfo || !tbody) {
+        if (!prevButton || !nextButton || !pageInfo || !tbody || !exportButton) {
           return;
         }
 
@@ -362,6 +383,15 @@ function renderTable(result: QueryExecutionResult): string {
           }
           pageIndex += 1;
           renderPage();
+        });
+
+        exportButton.addEventListener("click", () => {
+          const vscode = acquireVsCodeApi();
+          vscode.postMessage({
+            command: "exportCsv",
+            content: csvContent,
+            fileName: exportFileName
+          });
         });
 
         renderPage();
@@ -396,6 +426,68 @@ function formatCell(value: unknown): string {
   const title = truncated ? ` title="${escapeHtml(text)}"` : "";
 
   return `<td${title}>${escapeHtml(display)}</td>`;
+}
+
+function toCsvCellValue(value: unknown): string | null {
+  if (value === null || value === undefined) {
+    return null;
+  }
+
+  if (value instanceof Date) {
+    return value.toISOString();
+  }
+
+  if (Buffer.isBuffer(value)) {
+    return `\\x${value.toString("hex")}`;
+  }
+
+  if (typeof value === "object") {
+    try {
+      return JSON.stringify(value);
+    } catch {
+      return String(value);
+    }
+  }
+
+  return String(value);
+}
+
+function escapeCsvValue(value: string): string {
+  const escapedValue = value.replace(/"/g, "\"\"");
+  if (/[",\r\n]|^\s|\s$/.test(value)) {
+    return `"${escapedValue}"`;
+  }
+  return escapedValue;
+}
+
+function buildCsvContent(columns: string[], rows: Array<Array<string | null>>): string {
+  const headerRow = columns.map((column) => escapeCsvValue(column)).join(",");
+  const dataRows = rows.map((row) =>
+    row
+      .map((value) => {
+        if (value === null) {
+          return "";
+        }
+        return escapeCsvValue(value);
+      })
+      .join(",")
+  );
+  return [headerRow, ...dataRows].join("\r\n");
+}
+
+function buildResultsExportFileName(): string {
+  const now = new Date();
+  const datePart = [
+    now.getFullYear(),
+    String(now.getMonth() + 1).padStart(2, "0"),
+    String(now.getDate()).padStart(2, "0")
+  ].join("");
+  const timePart = [
+    String(now.getHours()).padStart(2, "0"),
+    String(now.getMinutes()).padStart(2, "0"),
+    String(now.getSeconds()).padStart(2, "0")
+  ].join("");
+  return `query-results-${datePart}-${timePart}.csv`;
 }
 
 function escapeHtml(value: string): string {
