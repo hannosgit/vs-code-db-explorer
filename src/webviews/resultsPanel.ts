@@ -196,7 +196,8 @@ function buildHtml(
     }
     table {
       border-collapse: collapse;
-      width: 100%;
+      width: max-content;
+      min-width: 100%;
       font-size: 12px;
     }
     th, td {
@@ -210,6 +211,35 @@ function buildHtml(
       position: sticky;
       top: 0;
       z-index: 1;
+      white-space: nowrap;
+    }
+    th .column-resize-handle {
+      position: absolute;
+      right: -4px;
+      top: 0;
+      width: 8px;
+      height: 100%;
+      cursor: col-resize;
+      user-select: none;
+      touch-action: none;
+      z-index: 2;
+    }
+    th .column-resize-handle::after {
+      content: "";
+      position: absolute;
+      top: 20%;
+      bottom: 20%;
+      left: 3px;
+      width: 1px;
+      background: transparent;
+    }
+    th:hover .column-resize-handle::after,
+    th.is-resizing .column-resize-handle::after {
+      background: var(--muted);
+    }
+    body.is-resizing-columns {
+      cursor: col-resize;
+      user-select: none;
     }
     th.row-number,
     td.row-number {
@@ -310,8 +340,11 @@ function renderTable(result: QueryExecutionResult): string {
   const csvContent = buildCsvContent(result.columns, csvRows);
   const safeCsvContent = JSON.stringify(csvContent).replace(/</g, "\\u003c");
   const safeExportFileName = JSON.stringify(buildResultsExportFileName()).replace(/</g, "\\u003c");
-  const headerRow = [`<th class="row-number">#</th>`, ...result.columns.map((col) => `<th>${escapeHtml(col)}</th>`)]
-    .join("");
+  const headerRow = [
+    `<th class="row-number">#</th>`,
+    ...result.columns.map((col) => `<th>${escapeHtml(col)}</th>`)
+  ].join("");
+  const colGroup = ["<col>", ...result.columns.map(() => "<col>")].join("");
   const allRows = result.rows
     .map((row, rowIndex) => {
       const cells = result.columns
@@ -329,7 +362,8 @@ function renderTable(result: QueryExecutionResult): string {
         <button id="results-next"${allRows.length > RESULTS_PAGE_SIZE ? "" : " disabled"}>Next</button>
         <button id="results-export">Export CSV</button>
       </div>
-      <table>
+      <table id="results-table">
+        <colgroup>${colGroup}</colgroup>
         <thead>
           <tr>${headerRow}</tr>
         </thead>
@@ -349,11 +383,64 @@ function renderTable(result: QueryExecutionResult): string {
         const exportButton = document.getElementById("results-export");
         const pageInfo = document.getElementById("results-page-info");
         const tbody = document.getElementById("results-body");
+        const table = document.getElementById("results-table");
         const csvContent = ${safeCsvContent};
         const exportFileName = ${safeExportFileName};
 
-        if (!prevButton || !nextButton || !pageInfo || !tbody || !exportButton) {
+        if (!prevButton || !nextButton || !pageInfo || !tbody || !exportButton || !table) {
           return;
+        }
+
+        function makeColumnsResizable(tableElement) {
+          const headerCells = Array.from(tableElement.querySelectorAll("thead th"));
+          const columns = Array.from(tableElement.querySelectorAll("colgroup col"));
+          const minWidth = 80;
+
+          headerCells.forEach((headerCell, columnIndex) => {
+            if (columnIndex === 0) {
+              return;
+            }
+
+            headerCell.classList.add("is-resizable");
+            const handle = document.createElement("div");
+            handle.className = "column-resize-handle";
+            headerCell.appendChild(handle);
+
+            handle.addEventListener("pointerdown", (event) => {
+              event.preventDefault();
+              event.stopPropagation();
+              const startX = event.clientX;
+              const startWidth = headerCell.getBoundingClientRect().width;
+
+              headerCell.classList.add("is-resizing");
+              document.body.classList.add("is-resizing-columns");
+              handle.setPointerCapture(event.pointerId);
+
+              const onMove = (moveEvent) => {
+                const delta = moveEvent.clientX - startX;
+                const nextWidth = Math.max(minWidth, startWidth + delta);
+                const targetColumn = columns[columnIndex];
+                if (!targetColumn) {
+                  return;
+                }
+                targetColumn.style.width = nextWidth + "px";
+                targetColumn.style.minWidth = nextWidth + "px";
+              };
+
+              const onUp = (upEvent) => {
+                handle.releasePointerCapture(upEvent.pointerId);
+                handle.removeEventListener("pointermove", onMove);
+                handle.removeEventListener("pointerup", onUp);
+                handle.removeEventListener("pointercancel", onUp);
+                headerCell.classList.remove("is-resizing");
+                document.body.classList.remove("is-resizing-columns");
+              };
+
+              handle.addEventListener("pointermove", onMove);
+              handle.addEventListener("pointerup", onUp);
+              handle.addEventListener("pointercancel", onUp);
+            });
+          });
         }
 
         function renderPage() {
@@ -394,6 +481,7 @@ function renderTable(result: QueryExecutionResult): string {
           });
         });
 
+        makeColumnsResizable(table);
         renderPage();
       })();
     </script>

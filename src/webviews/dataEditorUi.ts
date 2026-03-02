@@ -138,6 +138,71 @@ function readState(documentObject: any): DataEditorState | undefined {
     });
   }
 
+  function enableResizableColumns(tableElement: any, skipColumnIndexes: Set<number>): void {
+    const headerCells = Array.from(tableElement.querySelectorAll("thead th")) as any[];
+    const columns = Array.from(tableElement.querySelectorAll("colgroup col")) as any[];
+    const minWidth = 80;
+
+    headerCells.forEach((headerCell: any, columnIndex: number) => {
+      if (skipColumnIndexes.has(columnIndex)) {
+        return;
+      }
+
+      headerCell.classList.add("is-resizable");
+      const handle = documentObject.createElement("div");
+      handle.classList.add("column-resize-handle");
+      headerCell.appendChild(handle);
+
+      handle.addEventListener("pointerdown", (event: Event) => {
+        const pointerEvent = event as unknown as {
+          clientX: number;
+          pointerId: number;
+          preventDefault(): void;
+          stopPropagation(): void;
+        };
+        pointerEvent.preventDefault();
+        pointerEvent.stopPropagation();
+
+        const startX = pointerEvent.clientX;
+        const startWidth = headerCell.getBoundingClientRect().width;
+        headerCell.classList.add("is-resizing");
+        documentObject.body.classList.add("is-resizing-columns");
+        handle.setPointerCapture(pointerEvent.pointerId);
+
+        const onMove = (moveEvent: Event) => {
+          const activePointerEvent = moveEvent as unknown as { clientX: number };
+          const delta = activePointerEvent.clientX - startX;
+          const nextWidth = Math.max(minWidth, startWidth + delta);
+          const targetColumn = columns[columnIndex];
+          if (!targetColumn) {
+            return;
+          }
+          targetColumn.style.width = `${nextWidth}px`;
+          targetColumn.style.minWidth = `${nextWidth}px`;
+        };
+
+        const onUp = (upEvent: Event) => {
+          const activePointerEvent = upEvent as unknown as { pointerId: number };
+          handle.releasePointerCapture(activePointerEvent.pointerId);
+          handle.removeEventListener("pointermove", onMove);
+          handle.removeEventListener("pointerup", onUp);
+          handle.removeEventListener("pointercancel", onUp);
+          headerCell.classList.remove("is-resizing");
+          documentObject.body.classList.remove("is-resizing-columns");
+        };
+
+        handle.addEventListener("pointermove", onMove);
+        handle.addEventListener("pointerup", onUp);
+        handle.addEventListener("pointercancel", onUp);
+      });
+    });
+  }
+
+  const dataTable = documentObject.getElementById("data-table");
+  if (dataTable) {
+    enableResizableColumns(dataTable, new Set([0, 1]));
+  }
+
   sortButtons.forEach((button: any) => {
     button.addEventListener("click", () => {
       if (!canDiscardUnsavedChanges()) {

@@ -281,7 +281,8 @@ function buildHtml(
       max-height: calc(100vh - 140px);
     }
     table {
-      width: 100%;
+      width: max-content;
+      min-width: 100%;
       border-collapse: collapse;
     }
     th, td {
@@ -297,6 +298,35 @@ function buildHtml(
       z-index: 1;
       padding: 6px 8px;
       font-weight: 600;
+      white-space: nowrap;
+    }
+    th .column-resize-handle {
+      position: absolute;
+      right: -4px;
+      top: 0;
+      width: 8px;
+      height: 100%;
+      cursor: col-resize;
+      user-select: none;
+      touch-action: none;
+      z-index: 3;
+    }
+    th .column-resize-handle::after {
+      content: "";
+      position: absolute;
+      top: 20%;
+      bottom: 20%;
+      left: 3px;
+      width: 1px;
+      background: transparent;
+    }
+    th:hover .column-resize-handle::after,
+    th.is-resizing .column-resize-handle::after {
+      background: var(--vscode-descriptionForeground);
+    }
+    body.is-resizing-columns {
+      cursor: col-resize;
+      user-select: none;
     }
     th .column-header {
       display: flex;
@@ -312,6 +342,7 @@ function buildHtml(
       justify-content: space-between;
       gap: 8px;
       width: 100%;
+      padding-right: 10px;
       cursor: pointer;
     }
     th button.column-sort:focus-visible {
@@ -459,6 +490,7 @@ function renderTableShell(
   sortColumn?: string,
   sortDirection?: "asc" | "desc"
 ): string {
+  const colGroup = ["<col>", "<col>", ...columns.map(() => "<col>")].join("");
   const headers = columns
     .map((column, columnIndex) => {
       const columnType = columnTypes[columnIndex] ?? "";
@@ -474,6 +506,7 @@ function renderTableShell(
   return `
     <div class="table-wrap">
       <table id="data-table">
+        <colgroup>${colGroup}</colgroup>
         <thead>
           <tr><th class="row-number">#</th><th class="row-actions">Actions</th>${headers}</tr>
         </thead>

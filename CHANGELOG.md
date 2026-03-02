@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.0.6
+
+- Make table columns resizable in the Results panel and Data Editor
+
 ## 0.0.5
 
 - Add an `Export CSV` action in the Data Editor to download the current page data
