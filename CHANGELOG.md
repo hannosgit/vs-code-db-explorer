@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.0.7
+
+- Make first column sticky in Data Editor and Results panel
+
 ## 0.0.6
 
 - Make table columns resizable in the Results panel and Data Editor

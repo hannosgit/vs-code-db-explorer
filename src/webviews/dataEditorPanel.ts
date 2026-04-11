@@ -371,6 +371,10 @@ function buildHtml(
       text-align: right;
       padding: 6px 8px;
       color: var(--vscode-descriptionForeground);
+      position: sticky;
+      left: 0;
+      z-index: 2;
+      background: var(--vscode-editorWidget-background);
     }
     th.row-actions,
     td.row-actions {
@@ -408,6 +412,9 @@ function buildHtml(
     }
     td input:not([type="checkbox"]).dirty,
     td select.dirty {
+      background: var(--vscode-editor-wordHighlightBackground);
+    }
+    td.row-number.dirty {
       background: var(--vscode-editor-wordHighlightBackground);
     }
     td .boolean-editor {

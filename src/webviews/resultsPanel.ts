@@ -247,6 +247,10 @@ function buildHtml(
       white-space: nowrap;
       text-align: right;
       color: var(--muted);
+      position: sticky;
+      left: 0;
+      z-index: 2;
+      background: var(--bg-alt);
     }
     td.null {
       color: var(--muted);
