@@ -6,8 +6,27 @@
     "type": "git",
     "url": "https://github.com/hannosgit/vs-code-db-explorer"
   },
-  "version": "0.0.7",
+  "version": "0.0.8",
   "publisher": "hannos",
+    "scripts": {
+    "compile": "tsc -p .",
+    "test": "npm run compile && node ./dist/test/runTest.js",
+    "coverage": "npm run compile && npx c8 --reporter=text --reporter=html --all --src dist --exclude \"dist/test/**\" node ./dist/test/runTest.js",
+    "watch": "tsc -watch -p .",
+    "package": "vsce package"
+  },
+  "devDependencies": {
+    "@types/mocha": "^10.0.6",
+    "@types/node": "^20.11.30",
+    "@types/pg": "^8.10.9",
+    "@types/vscode": "^1.85.0",
+    "@vscode/test-electron": "^2.3.8",
+    "mocha": "^10.4.0",
+    "typescript": "^5.4.2"
+  },
+  "dependencies": {
+    "pg": "^8.11.5"
+  },
   "icon": "resources/db.png",
   "engines": {
     "vscode": "^1.85.0"
@@ -242,24 +261,5 @@
         }
       }
     }
-  },
-  "scripts": {
-    "compile": "tsc -p .",
-    "test": "npm run compile && node ./dist/test/runTest.js",
-    "coverage": "npm run compile && npx c8 --reporter=text --reporter=html --all --src dist --exclude \"dist/test/**\" node ./dist/test/runTest.js",
-    "watch": "tsc -watch -p .",
-    "package": "vsce package"
-  },
-  "devDependencies": {
-    "@types/mocha": "^10.0.6",
-    "@types/node": "^20.11.30",
-    "@types/pg": "^8.10.9",
-    "@types/vscode": "^1.85.0",
-    "@vscode/test-electron": "^2.3.8",
-    "mocha": "^10.4.0",
-    "typescript": "^5.4.2"
-  },
-  "dependencies": {
-    "pg": "^8.11.5"
   }
 }
