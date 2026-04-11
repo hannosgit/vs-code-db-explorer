@@ -1,4 +1,9 @@
-import { escapeCsvValue } from "./csvExport";
+function escapeCsvValue(value: string): string {
+  if (/[",\r\n]/.test(value)) {
+    return `"${value.replace(/"/g, '""')}"`;
+  }
+  return value;
+}
 
 interface EditorRow {
   values: string[];
