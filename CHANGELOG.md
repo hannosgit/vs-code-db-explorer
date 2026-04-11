@@ -3,7 +3,6 @@
 ## 0.0.8
 
 
-
 ## 0.0.7
 
 - Make header rows sticky in the Data Editor and Results panels

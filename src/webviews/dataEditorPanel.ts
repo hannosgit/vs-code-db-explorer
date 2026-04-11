@@ -1,5 +1,5 @@
 import * as vscode from "vscode";
-import { exportCsv } from "./csvExport";
+import { escapeCsvValue, exportCsv } from "./csvExport";
 import { escapeHtml } from "./htmlUtils";
 
 export interface EditorRow {
@@ -141,6 +141,30 @@ export class DataEditorPanel {
       ) {
         void exportCsv({
           content: message.content,
+          fileName: message.fileName,
+          fallbackFileName: "data-export.csv"
+        });
+      }
+
+      if (
+        message.command === "exportCsvRows" &&
+        Array.isArray(message.columns) &&
+        Array.isArray(message.rows) &&
+        typeof message.fileName === "string"
+      ) {
+        const columns = message.columns.filter((column: unknown): column is string =>
+          typeof column === "string"
+        );
+        const rows = message.rows
+          .filter((row: unknown): row is unknown[] => Array.isArray(row))
+          .map((row: unknown[]) =>
+            row.map((value: unknown) =>
+              value === null || typeof value === "string" ? value : String(value)
+            )
+          ) as Array<Array<string | null>>;
+
+        void exportCsv({
+          content: buildCsvContent(columns, rows),
           fileName: message.fileName,
           fallbackFileName: "data-export.csv"
         });
@@ -504,6 +528,22 @@ function buildHtml(
   <script src="${scriptUri}" defer></script>
 </body>
 </html>`;
+}
+
+function buildCsvContent(columns: string[], rows: Array<Array<string | null>>): string {
+  const headerRow = columns.map((column) => escapeCsvValue(column)).join(",");
+  const dataRows = rows.map((row) =>
+    row
+      .map((value) => {
+        if (value === null) {
+          return "";
+        }
+        return escapeCsvValue(value);
+      })
+      .join(",")
+  );
+
+  return [headerRow, ...dataRows].join("\r\n");
 }
 
 function renderTableShell(

@@ -1,10 +1,3 @@
-function escapeCsvValue(value: string): string {
-  if (/[",\r\n]/.test(value)) {
-    return `"${value.replace(/"/g, '""')}"`;
-  }
-  return value;
-}
-
 interface EditorRow {
   values: string[];
   nulls: boolean[];
@@ -248,21 +241,17 @@ function readState(documentObject: any): DataEditorState | undefined {
 
 
 
-  function buildCsvContent(): string {
-    const headerRow = state.columns.map((column: string) => escapeCsvValue(column)).join(",");
-    const dataRows = workingRows
+  function buildCsvRowsPayload(): Array<Array<string | null>> {
+    return workingRows
       .filter((row: WorkingEditorRow) => !row.isDeleted)
       .map((row: WorkingEditorRow) =>
-        state.columns
-          .map((_: string, columnIndex: number) => {
-            if (row.nulls[columnIndex] === true) {
-              return "";
-            }
-            return escapeCsvValue(row.values[columnIndex] ?? "");
-          })
-          .join(",")
+        state.columns.map((_: string, columnIndex: number) => {
+          if (row.nulls[columnIndex] === true) {
+            return null;
+          }
+          return row.values[columnIndex] ?? "";
+        })
       );
-    return [headerRow, ...dataRows].join("\r\n");
   }
 
   function sanitizeFilenamePart(value: string | undefined, fallback: string): string {
@@ -293,8 +282,9 @@ function readState(documentObject: any): DataEditorState | undefined {
     }
 
     vscode.postMessage({
-      command: "exportCsv",
-      content: buildCsvContent(),
+      command: "exportCsvRows",
+      columns: state.columns,
+      rows: buildCsvRowsPayload(),
       fileName: buildExportFilename()
     });
   }
