@@ -1,6 +1,7 @@
 import * as vscode from "vscode";
 import { QueryExecutionResult } from "../query/queryRunner";
 import { exportCsv } from "./csvExport";
+import { escapeHtml } from "./htmlUtils";
 
 const RESULTS_PAGE_SIZE = 100;
 
@@ -102,8 +103,8 @@ function buildHtml(
     : result.cancelled
       ? renderCancelled(result)
       : result.error
-      ? renderError(result)
-      : renderTable(result);
+        ? renderError(result)
+        : renderTable(result);
 
   return `<!DOCTYPE html>
 <html lang="en">
@@ -598,11 +599,3 @@ function buildResultsExportFileName(): string {
   return `query-results-${datePart}-${timePart}.csv`;
 }
 
-function escapeHtml(value: string): string {
-  return value
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-    .replace(/\"/g, "&quot;")
-    .replace(/'/g, "&#39;");
-}

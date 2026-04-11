@@ -1,5 +1,6 @@
 import * as vscode from "vscode";
 import { exportCsv } from "./csvExport";
+import { escapeHtml } from "./htmlUtils";
 
 export interface EditorRow {
   values: string[];
@@ -535,13 +536,4 @@ function renderTableShell(
       </table>
     </div>
   `;
-}
-
-function escapeHtml(value: string): string {
-  return value
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-    .replace(/\"/g, "&quot;")
-    .replace(/'/g, "&#39;");
 }
