@@ -127,6 +127,10 @@ function buildHtml(
       font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
       background: var(--bg);
       color: var(--text);
+      display: flex;
+      flex-direction: column;
+      height: 100vh;
+      overflow: hidden;
     }
     header {
       padding: 12px 16px 4px;
@@ -173,6 +177,8 @@ function buildHtml(
     .table-wrap {
       padding: 12px 16px 24px;
       overflow: auto;
+      flex: 1;
+      min-height: 0;
     }
     .table-toolbar {
       display: flex;
@@ -241,7 +247,17 @@ function buildHtml(
       cursor: col-resize;
       user-select: none;
     }
-    th.row-number,
+    th.row-number {
+      width: 1%;
+      white-space: nowrap;
+      text-align: right;
+      color: var(--muted);
+      position: sticky;
+      left: 0;
+      z-index: 4;
+      background: var(--bg-alt);
+      font-weight: 600;
+    }
     td.row-number {
       width: 1%;
       white-space: nowrap;

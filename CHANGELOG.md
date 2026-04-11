@@ -2,6 +2,7 @@
 
 ## 0.0.7
 
+- Make header rows sticky in the Data Editor and Results panel
 - Make first column sticky in Data Editor and Results panel
 
 ## 0.0.6

@@ -291,11 +291,14 @@ function buildHtml(
       vertical-align: top;
       padding: 0;
     }
-    th {
-      background: var(--vscode-editorWidget-background);
+    thead tr {
       position: sticky;
       top: 0;
-      z-index: 1;
+      z-index: 3;
+    }
+    th {
+      background: var(--vscode-editorWidget-background);
+      position: relative;
       padding: 6px 8px;
       font-weight: 600;
       white-space: nowrap;
@@ -364,7 +367,18 @@ function buildHtml(
       font-weight: 400;
       color: var(--vscode-descriptionForeground);
     }
-    th.row-number,
+    th.row-number {
+      width: 1%;
+      white-space: nowrap;
+      text-align: right;
+      padding: 6px 8px;
+      color: var(--vscode-descriptionForeground);
+      position: sticky;
+      left: 0;
+      z-index: 4;
+      background: var(--vscode-editorWidget-background);
+      font-weight: 600;
+    }
     td.row-number {
       width: 1%;
       white-space: nowrap;
