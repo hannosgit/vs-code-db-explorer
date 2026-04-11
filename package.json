@@ -27,6 +27,11 @@
         "category": "DB Explorer"
       },
       {
+        "command": "dbExplorer.connectConnection",
+        "title": "Connect",
+        "category": "DB Explorer"
+      },
+      {
         "command": "dbExplorer.deleteConnection",
         "title": "Delete Connection",
         "category": "DB Explorer"
@@ -121,6 +126,11 @@
         }
       ],
       "view/item/context": [
+        {
+          "command": "dbExplorer.connectConnection",
+          "when": "view == dbConnections && viewItem == dbConnection",
+          "group": "navigation@18"
+        },
         {
           "command": "dbExplorer.updatePassword",
           "when": "view == dbConnections && viewItem == dbConnection",

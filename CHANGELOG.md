@@ -2,8 +2,9 @@
 
 ## 0.0.7
 
-- Make header rows sticky in the Data Editor and Results panel
-- Make first column sticky in Data Editor and Results panel
+- Make header rows sticky in the Data Editor and Results panels
+- Make first column sticky in the Data Editor and Results panels
+- Add `Connect` context menu command for DB connection nodes
 
 ## 0.0.6
 

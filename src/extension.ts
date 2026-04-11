@@ -152,6 +152,57 @@ export function activate(context: vscode.ExtensionContext): void {
     vscode.commands.registerCommand("dbExplorer.updatePassword", async (item?: unknown) => {
       await connectionsProvider.updateConnectionPassword(item);
     }),
+    vscode.commands.registerCommand("dbExplorer.connectConnection", async (item?: unknown) => {
+      const profiles = connectionManager.listProfiles();
+      if (profiles.length === 0) {
+        void vscode.window.showWarningMessage(
+          "No profiles configured. Run \"DB Explorer: Add Connection\" or edit settings.json."
+        );
+        return;
+      }
+
+      let profileId: string | undefined;
+
+      if (item) {
+        const connectionsProviderConnectionsTree = item as {
+          profile?: { id?: string };
+          id?: string;
+        };
+
+        if (connectionsProviderConnectionsTree.id && typeof connectionsProviderConnectionsTree.id === "string") {
+          profileId = connectionsProviderConnectionsTree.id;
+        } else if (connectionsProviderConnectionsTree.profile?.id) {
+          profileId = connectionsProviderConnectionsTree.profile.id;
+        }
+      }
+
+      if (!profileId) {
+        const picked = await vscode.window.showQuickPick(
+          profiles.map((profile) => ({
+            label: profile.label,
+            description: `${profile.user}@${profile.host}:${profile.port}/${profile.database}`,
+            profile
+          })),
+          { placeHolder: "Select a DB Explorer connection" }
+        );
+
+        if (!picked) {
+          return;
+        }
+
+        profileId = picked.profile.id;
+      }
+
+      try {
+        await connectionManager.connect(profileId);
+        connectionsProvider.refresh();
+        schemaProvider.refresh();
+      } catch (error) {
+        const message =
+          error instanceof Error ? error.message : "Failed to connect to DB.";
+        void vscode.window.showErrorMessage(message);
+      }
+    }),
     vscode.commands.registerCommand("dbExplorer.connect", async () => {
       const profiles = connectionManager.listProfiles();
       if (profiles.length === 0) {
