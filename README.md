@@ -4,6 +4,13 @@ VS Code extension for working with databases.
 
 Currently only PostgreSQL is supported.
 
+You can find it in:
+
+* Visual Studio Code Marketplace: https://marketplace.visualstudio.com/items?itemName=hannos.db-explorer
+* Open VSX Registry: https://open-vsx.org/extension/hannos/db-explorer
+
+Feel free to review and rate it!
+
 ## Screenshots
 
 ### Data Editor
