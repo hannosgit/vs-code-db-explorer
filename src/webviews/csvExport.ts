@@ -42,3 +42,11 @@ function getDefaultSaveUri(fileName: string): vscode.Uri | undefined {
 
   return vscode.Uri.joinPath(workspaceFolder, fileName);
 }
+
+export function escapeCsvValue(value: string): string {
+  const escapedValue = value.replace(/"/g, "\"\"");
+  if (/[",\r\n]|^\s|\s$/.test(value)) {
+    return `"${escapedValue}"`;
+  }
+  return escapedValue;
+}

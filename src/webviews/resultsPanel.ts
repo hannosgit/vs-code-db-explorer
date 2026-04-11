@@ -1,6 +1,6 @@
 import * as vscode from "vscode";
 import { QueryExecutionResult } from "../query/queryRunner";
-import { exportCsv } from "./csvExport";
+import { escapeCsvValue, exportCsv } from "./csvExport";
 import { escapeHtml } from "./htmlUtils";
 
 const RESULTS_PAGE_SIZE = 100;
@@ -559,14 +559,6 @@ function toCsvCellValue(value: unknown): string | null {
   }
 
   return String(value);
-}
-
-function escapeCsvValue(value: string): string {
-  const escapedValue = value.replace(/"/g, "\"\"");
-  if (/[",\r\n]|^\s|\s$/.test(value)) {
-    return `"${escapedValue}"`;
-  }
-  return escapedValue;
 }
 
 function buildCsvContent(columns: string[], rows: Array<Array<string | null>>): string {

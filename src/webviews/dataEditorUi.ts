@@ -1,3 +1,5 @@
+import { escapeCsvValue } from "./csvExport";
+
 interface EditorRow {
   values: string[];
   nulls: boolean[];
@@ -239,13 +241,7 @@ function readState(documentObject: any): DataEditorState | undefined {
     return button;
   }
 
-  function escapeCsvValue(value: string): string {
-    const escapedValue = value.replace(/"/g, "\"\"");
-    if (/[",\r\n]|^\s|\s$/.test(value)) {
-      return `"${escapedValue}"`;
-    }
-    return escapedValue;
-  }
+
 
   function buildCsvContent(): string {
     const headerRow = state.columns.map((column: string) => escapeCsvValue(column)).join(",");
